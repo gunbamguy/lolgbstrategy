@@ -376,7 +376,7 @@ function applyAppMode() {
     if (currentMode === 'map') {
         if (structureLayer) structureLayer.style.display = 'block';
         if (mapEl) {
-            mapEl.style.backgroundImage = "url(images/Summoner's_Rift_map_s14.png)";
+            mapEl.style.backgroundImage = 'url("images/Summoner\'s_Rift_map_s14.png")';
             mapEl.style.backgroundColor = 'transparent';
         }
     } else {
