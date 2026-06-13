@@ -233,8 +233,9 @@
     <!-- 조작 도움말 모달 -->
     <div id="help-modal" class="modal-overlay">
         <div class="modal-content">
-            <div class="modal-header">
+            <div class="modal-header" style="display: flex; align-items: center; justify-content: space-between; position: relative;">
                 <h2>❓ LoL Strategy Board 조작 도움말</h2>
+                <span style="color: var(--accent-color); font-size: 12px; font-weight: bold; border: 1.5px solid var(--accent-color); padding: 4px 10px; border-radius: 6px; background: rgba(208, 184, 108, 0.15); margin-left: auto; margin-right: 15px; box-shadow: 0 0 8px rgba(208, 184, 108, 0.25);">제작자: 군밤가이</span>
                 <span id="close-modal-btn" class="close-btn" onclick="hideHelpModal()">&times;</span>
             </div>
             <div class="modal-body">
@@ -265,9 +266,16 @@
                         <li><strong>프리셋 기능</strong>: 챔피언을 드래그해서 배치하거나 아군/적군 프리셋 묶음을 전체 드롭하여 배치할 수 있습니다.</li>
                     </ul>
                 </div>
+                <div class="help-section">
+                    <h3>🖼️ 스크린샷 모드 조작</h3>
+                    <ul>
+                        <li><strong>이미지 불러오기</strong>: 좌측 하단의 '배경 작동 모드 설정'에서 <strong>[스크린샷]</strong>을 선택한 후, 화면 안에서 <strong>Ctrl + V</strong>를 입력하면 스크린샷이 즉시 맵 배경으로 적용됩니다.</li>
+                        <li><strong>스크린샷 관리</strong>: 좌측 상단의 [스크린샷] 탭에서 이미 저장된 목록을 확인하고 불러오거나, 이름 변경(✏️) 및 삭제(✖)를 할 수 있습니다.</li>
+                        <li><strong>타워 자동 숨김</strong>: 스크린샷 모드에서는 맵 상의 기본 구조물(타워/억제기/넥서스) 레이어가 화면에서 자동으로 가려집니다.</li>
+                    </ul>
+                </div>
             </div>
-	    <div class="modal-footer" style="justify-content: space-between; align-items: center;">
-		<span style="color: #aaa; font-size: 13px; font-weight: bold;">제작자: 군밤가이</span>
+            <div class="modal-footer">
                 <button class="tool-btn btn-blue" onclick="hideHelpModal()">닫기</button>
             </div>
         </div>
