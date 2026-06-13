@@ -2370,7 +2370,7 @@ function setAppMode(mode) {
         
         // 배경을 원래 소환사의 협곡 이미지로 복구
         if (mapEl) {
-            mapEl.style.backgroundImage = "url('images/Summoner\'s_Rift_map_s14.png')";
+            mapEl.style.backgroundImage = "url(images/Summoner's_Rift_map_s14.png)";
             mapEl.style.backgroundColor = 'transparent';
         }
     } else {
