@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LoL Strategy Board (Updated Items)</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --sidebar-bg: #1e1e1e;
+            --accent-color: #d4af37;
+            --text-color: #f0f0f0;
+            --timeline-bg: #2a2a2a;
+            --step-active: #0acbe6;
+        }
+
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            overflow: hidden;
+        }
+
+        /* --- 사이드바 --- */
+        .sidebar {
+            width: 260px;
+            background-color: var(--sidebar-bg);
+            display: flex;
+            flex-direction: column;
+            padding: 15px;
+            z-index: 20;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            overflow-y: auto;
+        }
+
+        #sidebar-left { border-right: 1px solid #333; }
+        #sidebar-right { border-left: 1px solid #333; }
+
+        .section-title {
+            text-align: center;
+            margin-top: 15px;
+            margin-bottom: 10px;
+            color: var(--accent-color);
+            font-size: 1.1em;
+            border-bottom: 1px solid #444;
+            padding-bottom: 5px;
+        }
+
+        .search-box {
+            padding: 10px;
+            margin-bottom: 10px;
+            background: #333;
+            border: 1px solid #444;
+            color: white;
+            border-radius: 4px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .item-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            padding-right: 5px;
+        }
+
+        .icon-item {
+            width: 100%;
+            aspect-ratio: 1;
+            border-radius: 4px;
+            cursor: grab;
+            border: 1px solid #444;
+            transition: transform 0.1s;
+            background-color: #252525;
+            padding: 2px;
+            box-sizing: border-box;
+        }
+        .icon-item:hover { transform: scale(1.1); border-color: var(--accent-color); }
+
+        /* --- 메인 영역 --- */
+        #main-container {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            min-width: 0;
+        }
+
+        /* 툴바 */
+        #top-toolbar {
+            height: 40px;
+            background-color: #222;
+            display: flex;
+            align-items: center;
+            padding: 0 15px;
+            border-bottom: 1px solid #333;
+            justify-content: space-between;
+        }
+        .toolbar-group { display: flex; gap: 10px; }
+        .tool-btn {
+            background: #333; color: #eee; border: 1px solid #444;
+            padding: 5px 12px; border-radius: 3px; cursor: pointer; font-size: 0.9em;
+        }
+        .tool-btn:hover { background: #444; }
+
+        #map-area {
+            flex-grow: 1;
+            background-color: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        #rift-map {
+            width: 800px;
+            height: 800px;
+            background-image: url('https://wiki.leagueoflegends.com/en-us/images/Summoner%27s_Rift_Minimap.png');
+            background-size: 100% 100%;
+            background-position: center;
+            position: relative;
+            box-shadow: 0 0 30px rgba(0,0,0,0.8);
+            border: 2px solid #333;
+        }
+
+        #structure-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; }
+        .map-structure {
+            position: absolute; transform: translate(-50%, -50%);
+            cursor: pointer; pointer-events: auto;
+            transition: filter 0.2s; filter: drop-shadow(0 0 2px rgba(0,0,0,0.8));
+        }
+        .map-structure:hover { filter: brightness(1.3); z-index: 15; }
+        .map-structure.destroyed { filter: grayscale(100%) brightness(0.3); opacity: 0.6; }
+
+        #svg-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 50; }
+        #svg-layer line { transition: all 0.3s cubic-bezier(0.25, 0.1, 0.25, 1); }
+
+        /* 배치된 오브젝트 */
+        .placed-object {
+            position: absolute; transform: translate(-50%, -50%);
+            cursor: grab; z-index: 100;
+            filter: drop-shadow(0 0 3px rgba(0,0,0,0.8));
+            transition: top 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), left 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+        .placed-object:active { cursor: grabbing; transition: none; }
+        .placed-object.dragging { transition: none; }
+        
+        .placed-champion { width: 40px; height: 40px; border-radius: 50%; border: 2px solid #fff; z-index: 110; }
+        .placed-icon { width: 32px; height: 32px; z-index: 105; }
+
+        .arrow-control {
+            width: 12px; height: 12px; border-radius: 50%; position: absolute;
+            cursor: crosshair; z-index: 101; transform: translate(-50%, -50%);
+            transition: top 0.3s, left 0.3s;
+        }
+        .arrow-control.end { background-color: #ff5252; border: 2px solid white; }
+        .arrow-control.start { background-color: #69f0ae; border: 2px solid white; cursor: grab; width: 14px; height: 14px; z-index: 102; }
+        .arrow-control.dragging { transition: none; }
+
+        /* --- 타임라인 --- */
+        #timeline {
+            height: 90px;
+            background-color: var(--timeline-bg);
+            border-top: 1px solid #444;
+            display: flex;
+            align-items: center;
+            padding: 0 15px;
+            gap: 10px;
+            overflow-x: auto;
+            z-index: 200;
+        }
+
+        .step-scroll-area {
+            display: flex; gap: 8px; overflow-x: auto; flex-grow: 1; padding: 10px 0;
+            scrollbar-width: thin; scrollbar-color: #555 #2a2a2a;
+        }
+
+        .step-btn {
+            background: #444; color: #aaa; border: none; padding: 8px 15px;
+            border-radius: 4px; cursor: pointer; font-weight: bold; min-width: 60px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            font-size: 13px; position: relative;
+        }
+        .step-btn.active { background: var(--step-active); color: #000; box-shadow: 0 0 8px var(--step-active); }
+        .step-number { font-size: 1.1em; margin-bottom: 2px; }
+        
+        .control-group {
+            display: flex; gap: 5px; margin-left: 10px; border-left: 1px solid #555; padding-left: 15px;
+            flex-shrink: 0; align-items: center;
+        }
+        .control-btn { 
+            background: var(--accent-color); color: #000; border: none; 
+            padding: 8px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 13px; 
+        }
+        .btn-green { background: #69f0ae; color: #000; }
+        .btn-blue { background: #448aff; color: white; }
+        .btn-red { background: #ff5252; color: white; }
+        .btn-gray { background: #555; color: #ddd; }
+
+        /* 컨텍스트 메뉴 */
+        #context-menu {
+            position: absolute; display: none; background: #333; border: 1px solid #555;
+            box-shadow: 2px 2px 10px rgba(0,0,0,0.5); z-index: 1000; min-width: 150px; border-radius: 4px; padding: 5px 0;
+        }
+        .menu-item { padding: 8px 15px; cursor: pointer; color: #eee; font-size: 14px; }
+        .menu-item:hover { background-color: #444; }
+        .menu-item.danger { color: #ff6b6b; }
+    </style>
+</head>
+<body>
+
+    <!-- 왼쪽: 챔피언 -->
+    <div id="sidebar-left" class="sidebar">
+        <h3 class="section-title">Champions</h3>
+        <input type="text" id="search" class="search-box" placeholder="챔피언 검색...">
+        <div class="item-grid" id="champList"></div>
+    </div>
+
+    <!-- 메인 -->
+    <div id="main-container">
+        <!-- 툴바 -->
+        <div id="top-toolbar">
+            <div class="toolbar-group">
+                <button class="tool-btn" onclick="undo()" title="Ctrl+Z">↶ Undo</button>
+                <button class="tool-btn" onclick="redo()" title="Ctrl+Shift+Z">↷ Redo</button>
+            </div>
+            <div style="color:#888; font-size:0.9em;">LoL Strategy Board - Updated Assets</div>
+        </div>
+
+        <div id="map-area">
+            <div id="rift-map" ondrop="drop(event)" ondragover="allowDrop(event)">
+                <div id="structure-layer"></div>
+                <svg id="svg-layer">
+                    <defs>
+                        <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                            <polygon points="0 0, 10 3.5, 0 7" fill="#ffeb3b" />
+                        </marker>
+                    </defs>
+                </svg>
+            </div>
+        </div>
+
+        <!-- 타임라인 -->
+        <div id="timeline">
+            <div style="color: #888; font-size: 14px; flex-shrink:0;">Timeline:</div>
+            <div id="steps-container" class="step-scroll-area"></div>
+            
+            <div class="control-group">
+                <button class="control-btn btn-blue" onclick="duplicateCurrentStep()" title="현재 상태를 복사하여 다음 장 삽입">Step 복제</button>
+                <button class="control-btn btn-red" onclick="deleteCurrentStep()">삭제</button>
+                <button class="control-btn btn-gray" onclick="resetCurrentStep()">초기화</button>
+                <button class="control-btn" onclick="addNextStep()" title="마지막 장면 이어받아 추가">+ 다음 Step</button>
+                <button class="control-btn btn-green" onclick="addFreeArrow()">+ 단독 화살표</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 오른쪽: 핑 & 오브젝트 -->
+    <div id="sidebar-right" class="sidebar">
+        <h3 class="section-title">Smart Pings</h3>
+        <div class="item-grid" id="tacticsList"></div>
+        <h3 class="section-title">Objects</h3>
+        <div class="item-grid" id="objectsList"></div>
+    </div>
+
+    <!-- 우클릭 메뉴 -->
+    <div id="context-menu">
+        <div class="menu-item" id="menu-add-arrow">➤ 화살표 추가/제거</div>
+        <div class="menu-item danger" id="menu-delete">✖ 삭제</div>
+    </div>
+
+    <script>
+        let currentVersion = "";
+        let championData = {};
+        
+        let timelineData = [ [] ]; 
+        let currentStepIndex = 0;
+        let contextTargetUid = null;
+
+        // Undo/Redo
+        let historyStack = [];
+        let historyPointer = -1;
+
+        const mapEl = document.getElementById('rift-map');
+        const svgLayer = document.getElementById('svg-layer');
+        const structureLayer = document.getElementById('structure-layer');
+        const contextMenu = document.getElementById('context-menu');
+
+        // --- 고정 구조물 좌표 ---
+        const structures = [
+          { "type": "nexus", "team": "blue", "x": 50, "y": 750 },
+          { "type": "tower", "team": "blue", "x": 80, "y": 705 },
+          { "type": "tower", "team": "blue", "x": 101, "y": 724 },
+          { "type": "inhib", "team": "blue", "x": 70, "y": 617 },
+          { "type": "inhib", "team": "blue", "x": 171, "y": 625 },
+          { "type": "inhib", "team": "blue", "x": 185, "y": 731 },
+          { "type": "tower", "team": "blue", "x": 68, "y": 568 },
+          { "type": "tower", "team": "blue", "x": 197, "y": 601 },
+          { "type": "tower", "team": "blue", "x": 228, "y": 729 },
+          { "type": "tower", "team": "blue", "x": 86, "y": 445 },
+          { "type": "tower", "team": "blue", "x": 276, "y": 556 },
+          { "type": "tower", "team": "blue", "x": 375, "y": 722 },
+          { "type": "tower", "team": "blue", "x": 48, "y": 240 },
+          { "type": "tower", "team": "blue", "x": 332, "y": 445 },
+          { "type": "tower", "team": "blue", "x": 553, "y": 752 },
+          { "type": "nexus", "team": "red", "x": 750, "y": 50 },
+          { "type": "tower", "team": "red", "x": 708, "y": 120 },
+          { "type": "tower", "team": "red", "x": 688, "y": 105 },
+          { "type": "inhib", "team": "red", "x": 603, "y": 71 },
+          { "type": "inhib", "team": "red", "x": 620, "y": 189 },
+          { "type": "inhib", "team": "red", "x": 735, "y": 209 },
+          { "type": "tower", "team": "red", "x": 567, "y": 72 },
+          { "type": "tower", "team": "red", "x": 591, "y": 212 },
+          { "type": "tower", "team": "red", "x": 732, "y": 246 },
+          { "type": "tower", "team": "red", "x": 430, "y": 83 },
+          { "type": "tower", "team": "red", "x": 535, "y": 253 },
+          { "type": "tower", "team": "red", "x": 714, "y": 353 },
+          { "type": "tower", "team": "red", "x": 216, "y": 48 },
+          { "type": "tower", "team": "red", "x": 468, "y": 367 },
+          { "type": "tower", "team": "red", "x": 759, "y": 575 }
+        ];
+
+        // --- 핑 데이터 ---
+        const tacticsData = [
+            { id: 'ping-retreat', name: '위험/후퇴', src: 'https://raw.communitydragon.org/latest/game/assets/ux/minimap/pings/retreat.png' },
+            { id: 'ping-missing', name: '사라짐 (미아)', src: 'https://raw.communitydragon.org/latest/game/assets/ux/minimap/pings/mia_new.png' },
+            { id: 'ping-omw', name: '가는중', src: 'https://raw.communitydragon.org/latest/game/assets/ux/minimap/pings/on_my_way_new.png' },
+            { id: 'ping-assist', name: '지원 요청', src: 'https://raw.communitydragon.org/latest/game/assets/ux/minimap/pings/assist.png' },
+            { id: 'ping-caution', name: '주의', src: 'https://raw.communitydragon.org/latest/game/assets/ux/minimap/pings/caution.png' },
+            { id: 'ping-target', name: '공격/타겟', src: 'https://raw.communitydragon.org/latest/game/assets/ux/minimap/pings/target.png' },
+            { id: 'ping-hold', name: '방어/대기', src: 'https://raw.communitydragon.org/latest/game/assets/ux/minimap/pings/hold.png' },
+            { id: 'ping-warded', name: '와드 경고', src: 'https://raw.communitydragon.org/latest/game/assets/ux/minimap/pings/area_is_warded_small_red_new.png' },
+            { id: 'ping-push', name: '라인 밀기', src: 'https://raw.communitydragon.org/latest/game/assets/ux/minimap/pings/push.png' },
+            { id: 'ping-allin', name: '올인 (All-In)', src: 'https://raw.communitydragon.org/latest/game/assets/ux/minimap/pings/all_in.png' },
+            { id: 'ping-bait', name: '유인 (Bait)', src: 'https://raw.communitydragon.org/latest/game/assets/ux/minimap/pings/bait.png' }
+        ];
+
+        // --- [업데이트] 최신 파일명 적용 오브젝트 데이터 ---
+        const objectsData = [
+            { id: 'ward-yellow', name: '와드 (노랑)', src: 'https://raw.communitydragon.org/latest/game/assets/items/icons2d/3340_class_t1_wardingtotem.png' },
+            { id: 'ward-blue', name: '망원형 개조 (파랑)', src: 'https://raw.communitydragon.org/latest/game/assets/items/icons2d/3363_class_t1_farsightalteration.png' },
+            { id: 'ward-control', name: '제어 와드 (핑)', src: 'https://raw.communitydragon.org/latest/game/assets/items/icons2d/2055_class_t1_controlward.png' },
+            { id: 'oracle-lens', name: '예언자의 렌즈 (빨강)', src: 'https://raw.communitydragon.org/latest/game/assets/items/icons2d/3364_class_t1_oracleslens.png' },
+            { id: 'teleport', name: '텔레포트', src: 'https://raw.communitydragon.org/latest/game/assets/items/icons2d/teleporthome.png' },
+            
+            // 정글 식물 (환경 오브젝트 경로 유지)
+            { id: 'plant-blast', name: '솔방울탄', src: 'https://raw.communitydragon.org/latest/game/assets/environment/shrooms/icon_blastcone.png' },
+            { id: 'plant-scryer', name: '수정초', src: 'https://raw.communitydragon.org/latest/game/assets/environment/shrooms/icon_visionplant.png' },
+            { id: 'plant-honey', name: '꿀열매', src: 'https://raw.communitydragon.org/latest/game/assets/environment/shrooms/icon_healthplant.png' },
+        ];
+
+        async function init() {
+            try {
+                const verRes = await fetch('https://ddragon.leagueoflegends.com/api/versions.json');
+                const versions = await verRes.json();
+                currentVersion = versions[0];
+                
+                const champRes = await fetch(`https://ddragon.leagueoflegends.com/cdn/${currentVersion}/data/ko_KR/champion.json`);
+                const champJson = await champRes.json();
+                championData = champJson.data;
+
+                renderLeftSidebar();
+                renderRightSidebar();
+                renderStructures();
+                
+                recordHistory();
+                renderScene();
+
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        // --- History (Deep Copy Logic) ---
+        function recordHistory() {
+            if (historyPointer < historyStack.length - 1) {
+                historyStack = historyStack.slice(0, historyPointer + 1);
+            }
+            const snapshot = {
+                data: JSON.parse(JSON.stringify(timelineData)),
+                stepIndex: currentStepIndex
+            };
+            historyStack.push(snapshot);
+            historyPointer++;
+            
+            if(historyStack.length > 50) { 
+                historyStack.shift();
+                historyPointer--;
+            }
+        }
+
+        function undo() {
+            if (historyPointer > 0) {
+                historyPointer--;
+                restoreState(historyStack[historyPointer]);
+            }
+        }
+
+        function redo() {
+            if (historyPointer < historyStack.length - 1) {
+                historyPointer++;
+                restoreState(historyStack[historyPointer]);
+            }
+        }
+
+        function restoreState(snapshot) {
+            timelineData = JSON.parse(JSON.stringify(snapshot.data));
+            currentStepIndex = snapshot.stepIndex;
+            renderScene();
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+                e.preventDefault();
+                if (e.shiftKey) redo(); else undo();
+            }
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+                e.preventDefault();
+                redo();
+            }
+        });
+
+        // --- Rendering ---
+        function renderStructures() {
+            structureLayer.innerHTML = '';
+            const icons = {
+                blue: {
+                    tower: 'https://raw.communitydragon.org/14.5/game/assets/characters/turret/hud/turret_blue_circle.png',
+                    inhib: 'https://raw.communitydragon.org/14.5/game/assets/characters/inhibitor/hud/inhibitor_blue_circle.png', 
+                    nexus: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/map-assets/map11/icon-ex-blue.png'
+                },
+                red: {
+                    tower: 'https://raw.communitydragon.org/14.5/game/assets/characters/turret/hud/turret_red_circle.png',
+                    inhib: 'https://raw.communitydragon.org/14.5/game/assets/characters/inhibitor/hud/inhibitor_red_circle.png',
+                    nexus: 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/map-assets/map11/icon-ex-red.png'
+                }
+            };
+            structures.forEach((st) => {
+                const img = document.createElement('img');
+                img.className = 'map-structure';
+                img.src = icons[st.team][st.type];
+                img.style.left = st.x + 'px';
+                img.style.top = st.y + 'px';
+                const size = st.type === 'nexus' ? 50 : st.type === 'inhib' ? 36 : 26;
+                img.style.width = size + 'px';
+                img.style.height = size + 'px';
+                img.onclick = function() { this.classList.toggle('destroyed'); };
+                structureLayer.appendChild(img);
+            });
+        }
+
+        function renderLeftSidebar(filter = "") {
+            const list = document.getElementById('champList');
+            list.innerHTML = "";
+            Object.keys(championData).sort().forEach(key => {
+                const champ = championData[key];
+                if (champ.name.includes(filter) || key.toLowerCase().includes(filter.toLowerCase())) {
+                    const img = document.createElement('img');
+                    img.src = `https://ddragon.leagueoflegends.com/cdn/${currentVersion}/img/champion/${key}.png`;
+                    img.className = 'icon-item';
+                    img.draggable = true;
+                    img.title = champ.name;
+                    img.addEventListener('dragstart', (e) => {
+                        e.dataTransfer.setData("dragType", "new-champion");
+                        e.dataTransfer.setData("champId", key);
+                    });
+                    list.appendChild(img);
+                }
+            });
+        }
+        document.getElementById('search').addEventListener('input', (e) => renderLeftSidebar(e.target.value));
+
+        function renderRightSidebar() {
+            const tacticsList = document.getElementById('tacticsList');
+            tacticsData.forEach(item => {
+                const img = document.createElement('img');
+                img.src = item.src;
+                img.className = 'icon-item';
+                img.draggable = true;
+                img.title = item.name;
+                img.addEventListener('dragstart', (e) => {
+                    e.dataTransfer.setData("dragType", "new-ping");
+                    e.dataTransfer.setData("iconSrc", item.src);
+                });
+                tacticsList.appendChild(img);
+            });
+
+            const objectsList = document.getElementById('objectsList');
+            objectsData.forEach(item => {
+                const img = document.createElement('img');
+                img.src = item.src;
+                img.className = 'icon-item';
+                img.draggable = true;
+                img.title = item.name;
+                img.addEventListener('dragstart', (e) => {
+                    e.dataTransfer.setData("dragType", "new-ward");
+                    e.dataTransfer.setData("iconSrc", item.src);
+                });
+                objectsList.appendChild(img);
+            });
+        }
+
+        // --- Drag & Drop ---
+        function addFreeArrow() {
+            const newArrow = {
+                type: 'free_arrow',
+                uid: "arrow_" + Date.now(),
+                x: 400, y: 400,
+                arrow: { hasArrow: true, dx: 100, dy: 0 }
+            };
+            timelineData[currentStepIndex].push(newArrow);
+            renderScene();
+            recordHistory();
+        }
+
+        function allowDrop(ev) { ev.preventDefault(); }
+
+        function drop(ev) {
+            ev.preventDefault();
+            const mapRect = mapEl.getBoundingClientRect();
+            let x = ev.clientX - mapRect.left;
+            let y = ev.clientY - mapRect.top;
+            x = Math.max(0, Math.min(x, 800));
+            y = Math.max(0, Math.min(y, 800));
+
+            const dragType = ev.dataTransfer.getData("dragType");
+            const uid = ev.dataTransfer.getData("uid");
+            let modified = false;
+
+            if (dragType === "new-champion") {
+                timelineData[currentStepIndex].push({
+                    type: 'champion',
+                    uid: "champ_" + Date.now(),
+                    champId: ev.dataTransfer.getData("champId"),
+                    x: x, y: y,
+                    arrow: { hasArrow: false, dx: 50, dy: 0 }
+                });
+                modified = true;
+            } else if (dragType === "new-ping" || dragType === "new-ward") {
+                const type = dragType === "new-ping" ? "ping" : "ward";
+                timelineData[currentStepIndex].push({
+                    type: type,
+                    uid: type + "_" + Date.now(),
+                    src: ev.dataTransfer.getData("iconSrc"),
+                    x: x, y: y,
+                    arrow: { hasArrow: false, dx: 0, dy: 0 }
+                });
+                modified = true;
+            } else if (dragType === "move-obj") {
+                const obj = timelineData[currentStepIndex].find(o => o.uid === uid);
+                if(obj) { obj.x = x; obj.y = y; modified = true; }
+            }
+
+            if (modified) {
+                renderScene();
+                recordHistory();
+            }
+        }
+
+        function renderScene() {
+            renderObjects();
+            renderArrows();
+            renderTimeline();
+        }
+
+        // --- Render Objects ---
+        function renderObjects() {
+            const currentObjs = timelineData[currentStepIndex];
+            const allDoms = Array.from(mapEl.querySelectorAll('.placed-object, .arrow-control.start'));
+            
+            allDoms.forEach(el => {
+                const uid = el.id.replace('start_', '');
+                if (!currentObjs.find(o => o.uid === uid)) el.remove();
+            });
+
+            currentObjs.forEach(obj => {
+                if (obj.type === 'champion') renderDOM(obj, 'placed-object placed-champion');
+                else if (obj.type === 'ping' || obj.type === 'ward') renderDOM(obj, 'placed-object placed-icon');
+                else if (obj.type === 'free_arrow') renderStartCtrl(obj);
+            });
+        }
+
+        function renderDOM(obj, className) {
+            let el = document.getElementById(obj.uid);
+            if (!el) {
+                el = document.createElement(obj.type === 'champion' ? 'div' : 'img');
+                el.id = obj.uid;
+                el.className = className;
+                el.draggable = true;
+                if(obj.type === 'champion') {
+                    el.style.backgroundImage = `url(https://ddragon.leagueoflegends.com/cdn/${currentVersion}/img/champion/${obj.champId}.png)`;
+                    el.style.backgroundSize = 'cover';
+                } else {
+                    el.src = obj.src;
+                }
+                addDragEvents(el, obj);
+                mapEl.appendChild(el);
+            }
+            if(!el.classList.contains('dragging')) {
+                el.style.left = obj.x + "px";
+                el.style.top = obj.y + "px";
+            }
+        }
+
+        function renderStartCtrl(obj) {
+            const id = `start_${obj.uid}`;
+            let el = document.getElementById(id);
+            if(!el) {
+                el = document.createElement('div');
+                el.id = id;
+                el.className = 'arrow-control start';
+                el.draggable = true;
+                addDragEvents(el, obj);
+                mapEl.appendChild(el);
+            }
+            if(!el.classList.contains('dragging')) {
+                el.style.left = obj.x + "px";
+                el.style.top = obj.y + "px";
+            }
+        }
+
+        function addDragEvents(el, obj) {
+            el.addEventListener('dragstart', (e) => {
+                e.dataTransfer.setData("dragType", "move-obj");
+                e.dataTransfer.setData("uid", obj.uid);
+                e.dataTransfer.setDragImage(new Image(), 0, 0);
+                el.classList.add('dragging'); 
+                const end = document.getElementById(`end_${obj.uid}`);
+                if(end) end.style.transition = 'none';
+            });
+            el.addEventListener('drag', (e) => {
+                if(e.clientX === 0) return;
+                const r = mapEl.getBoundingClientRect();
+                const newX = Math.min(800, Math.max(0, e.clientX - r.left));
+                const newY = Math.min(800, Math.max(0, e.clientY - r.top));
+                obj.x = newX;
+                obj.y = newY;
+                el.style.left = newX + "px";
+                el.style.top = newY + "px";
+                updateArrowLine(obj);
+            });
+            el.addEventListener('dragend', () => {
+                el.classList.remove('dragging');
+                const end = document.getElementById(`end_${obj.uid}`);
+                if(end) end.style.transition = '';
+                renderScene();
+                recordHistory();
+            });
+            el.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                showContextMenu(e.clientX, e.clientY, obj.uid);
+            });
+        }
+
+        // --- Render Arrows ---
+        function renderArrows() {
+            const currentObjs = timelineData[currentStepIndex];
+            const activeUids = currentObjs.filter(o => o.arrow && o.arrow.hasArrow).map(o => o.uid);
+            
+            svgLayer.querySelectorAll('line').forEach(l => {
+                if(!activeUids.includes(l.getAttribute('data-uid'))) l.remove();
+            });
+            mapEl.querySelectorAll('.arrow-control.end').forEach(c => {
+                const p = c.getAttribute('data-parent');
+                const obj = currentObjs.find(o => o.uid === p);
+                if(!obj || !obj.arrow.hasArrow) c.remove();
+            });
+
+            currentObjs.forEach(obj => {
+                if(obj.arrow && obj.arrow.hasArrow) renderSingleArrow(obj);
+            });
+        }
+
+        function renderSingleArrow(obj) {
+            let line = svgLayer.querySelector(`line[data-uid="${obj.uid}"]`);
+            if (!line) {
+                line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                line.setAttribute("data-uid", obj.uid);
+                line.setAttribute("stroke", "#ffeb3b");
+                line.setAttribute("stroke-width", "3");
+                line.setAttribute("marker-end", "url(#arrowhead)");
+                line.style.opacity = "0.8";
+                svgLayer.appendChild(line);
+            }
+            line.setAttribute("x1", obj.x); line.setAttribute("y1", obj.y);
+            line.setAttribute("x2", obj.x + obj.arrow.dx); line.setAttribute("y2", obj.y + obj.arrow.dy);
+
+            let end = document.getElementById(`end_${obj.uid}`);
+            if(!end) {
+                end = document.createElement('div');
+                end.className = 'arrow-control end';
+                end.id = `end_${obj.uid}`;
+                end.setAttribute('data-parent', obj.uid);
+                end.draggable = true;
+                end.addEventListener('dragstart', (e) => {
+                    e.dataTransfer.setData("dragType", "arrow-end-drag");
+                    e.dataTransfer.setDragImage(new Image(), 0, 0);
+                    end.classList.add('dragging');
+                });
+                end.addEventListener('drag', (e) => {
+                    if(e.clientX === 0) return;
+                    const r = mapEl.getBoundingClientRect();
+                    const cx = e.clientX - r.left, cy = e.clientY - r.top;
+                    obj.arrow.dx = cx - obj.x;
+                    obj.arrow.dy = cy - obj.y;
+                    end.style.left = cx + "px";
+                    end.style.top = cy + "px";
+                    line.setAttribute("x2", cx); line.setAttribute("y2", cy);
+                });
+                end.addEventListener('dragend', () => {
+                    end.classList.remove('dragging');
+                    renderScene();
+                    recordHistory();
+                });
+                mapEl.appendChild(end);
+            }
+            if(!end.classList.contains('dragging')) {
+                end.style.left = (obj.x + obj.arrow.dx) + "px";
+                end.style.top = (obj.y + obj.arrow.dy) + "px";
+            }
+        }
+        
+        function updateArrowLine(obj) {
+            const line = document.querySelector(`line[data-uid="${obj.uid}"]`);
+            if(line && obj.arrow) {
+                line.setAttribute("x1", obj.x); line.setAttribute("y1", obj.y);
+                line.setAttribute("x2", obj.x + obj.arrow.dx); line.setAttribute("y2", obj.y + obj.arrow.dy);
+            }
+            const end = document.getElementById(`end_${obj.uid}`);
+            if(end && obj.arrow) {
+                end.style.left = (obj.x + obj.arrow.dx) + "px";
+                end.style.top = (obj.y + obj.arrow.dy) + "px";
+            }
+        }
+
+        // --- Timeline Management (Deep Copy) ---
+        function renderTimeline() {
+            const container = document.getElementById('steps-container');
+            container.innerHTML = "";
+            timelineData.forEach((_, idx) => {
+                const btn = document.createElement('button');
+                btn.className = `step-btn ${idx === currentStepIndex ? 'active' : ''}`;
+                btn.innerHTML = `<span class="step-number">${idx + 1}</span>`;
+                btn.onclick = () => { 
+                    currentStepIndex = idx; 
+                    renderScene(); 
+                    recordHistory(); 
+                };
+                container.appendChild(btn);
+            });
+            const activeBtn = container.children[currentStepIndex];
+            if(activeBtn) activeBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        }
+
+        function addNextStep() {
+            const lastStepData = timelineData[timelineData.length - 1];
+            const newData = JSON.parse(JSON.stringify(lastStepData));
+            timelineData.push(newData);
+            currentStepIndex = timelineData.length - 1;
+            renderScene();
+            recordHistory();
+        }
+
+        function duplicateCurrentStep() {
+            const currentData = JSON.parse(JSON.stringify(timelineData[currentStepIndex]));
+            timelineData.splice(currentStepIndex + 1, 0, currentData);
+            currentStepIndex++; 
+            renderScene();
+            recordHistory();
+        }
+
+        function deleteCurrentStep() {
+            if (timelineData.length <= 1) { alert("최소 1개의 Step은 존재해야 합니다."); return; }
+            if (confirm(`Step ${currentStepIndex + 1}을(를) 삭제하시겠습니까?`)) {
+                timelineData.splice(currentStepIndex, 1);
+                if (currentStepIndex >= timelineData.length) currentStepIndex = timelineData.length - 1;
+                renderScene();
+                recordHistory();
+            }
+        }
+
+        function resetCurrentStep() {
+            if(confirm("현재 Step을 초기화하시겠습니까?")) { 
+                timelineData[currentStepIndex] = []; 
+                renderScene(); 
+                recordHistory();
+            }
+        }
+
+        // --- Context Menu ---
+        function showContextMenu(x, y, uid) {
+            contextTargetUid = uid;
+            contextMenu.style.display = 'block';
+            contextMenu.style.left = x + 'px';
+            contextMenu.style.top = y + 'px';
+            const obj = timelineData[currentStepIndex].find(o => o.uid === uid);
+            const arrowMenu = document.getElementById('menu-add-arrow');
+            if (obj.type === 'free_arrow') arrowMenu.style.display = 'none';
+            else {
+                arrowMenu.style.display = 'block';
+                arrowMenu.innerText = (obj.arrow && obj.arrow.hasArrow) ? "➤ 화살표 제거" : "➤ 화살표 추가";
+            }
+        }
+        document.addEventListener('click', () => { contextMenu.style.display = 'none'; contextTargetUid = null; });
+        
+        document.getElementById('menu-delete').addEventListener('click', () => {
+            if (contextTargetUid) {
+                timelineData[currentStepIndex] = timelineData[currentStepIndex].filter(o => o.uid !== contextTargetUid);
+                renderScene();
+                recordHistory();
+            }
+        });
+        document.getElementById('menu-add-arrow').addEventListener('click', () => {
+            if (contextTargetUid) {
+                const obj = timelineData[currentStepIndex].find(o => o.uid === contextTargetUid);
+                if (obj && obj.type !== 'free_arrow') {
+                    if (!obj.arrow) obj.arrow = { hasArrow: false, dx: 0, dy: 0 };
+                    obj.arrow.hasArrow = !obj.arrow.hasArrow;
+                    if (obj.arrow.hasArrow) { obj.arrow.dx = 60; obj.arrow.dy = 0; }
+                    renderScene();
+                    recordHistory();
+                }
+            }
+        });
+
+        init();
+    </script>
+</body>
+</html>

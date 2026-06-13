@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LoL Strategy Board - OBS Viewer</title>
+    <link rel="stylesheet" href="css/index.css">
+    <style>
+        /* OBS용 전체화면/배경 투명화 커스텀 스타일 */
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            background: transparent !important; /* 크로마키/배경 투명 송출 대응 */
+            overflow: hidden;
+            position: relative;
+        }
+
+        #obs-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* 맵을 중앙에 꽉 채우되 비율을 유지하도록 설정 */
+        #zoom-container {
+            border: none !important;
+            box-shadow: none !important;
+            background: transparent !important;
+            position: absolute;
+            left: 0;
+            top: 0;
+            transform-origin: 0 0;
+        }
+
+        /* 가상 마우스 커서 스타일 */
+        #obs-mouse-pointer {
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.5); /* 반투명 화이트 */
+            border: 1px solid rgba(255, 255, 255, 0.8);
+            box-shadow: 0 0 4px rgba(0, 0, 0, 0.5); /* 은은한 섀도우로 변경 (발광 효과 제거) */
+            pointer-events: none;
+            z-index: 99999;
+            transform: translate(-50%, -50%);
+            transition: opacity 0.2s, transform 0.1s ease-out;
+            opacity: 0; /* 기본 상태는 보이지 않음 */
+        }
+        
+        /* 마우스가 움직일 때 살짝 맥박 뛰는 미세 애니메이션 */
+        #obs-mouse-pointer.active {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1.1);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="obs-container">
+        <div id="zoom-container">
+            <div id="rift-map" style="cursor: none; transform-origin: 0 0;">
+                <div id="structure-layer"></div>
+                <svg id="svg-layer" viewBox="0 0 1203.3 800" width="1203.3" height="800">
+                    <defs>
+                        <marker id="arrowhead" markerWidth="7" markerHeight="5" refX="5.5" refY="2.5" orient="auto">
+                            <path d="M0,0.5 L7,2.5 L0,4.5 L2,2.5 Z" fill="#ff5252" />
+                        </marker>
+                    </defs>
+                </svg>
+                <!-- 가상 마우스 커서 -->
+                <div id="obs-mouse-pointer"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 외부 스크립트 종속성 -->
+    <script src="js/constants.js"></script>
+    <script src="js/obs.js"></script>
+</body>
+</html>

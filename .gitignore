@@ -1,0 +1,8 @@
+node_modules/
+ff/node_modules/
+.DS_Store
+*.local
+.env
+.env.*
+ff/.env
+

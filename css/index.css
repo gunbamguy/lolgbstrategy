@@ -1,0 +1,613 @@
+:root {
+    --bg-color: #121212;
+    --sidebar-bg: #1e1e1e;
+    --accent-color: #d0b86c;
+    --text-color: #f0f0f0;
+    --timeline-bg: #2a2a2a;
+    --step-active: #0acbe6;
+    --map-width: 1203.3px;
+    --map-height: 800px;
+}
+
+body {
+    font-family: 'Segoe UI', sans-serif;
+    margin: 0;
+    display: flex;
+    height: 100vh;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    overflow: hidden;
+}
+
+/* --- 사이드바 --- */
+.sidebar {
+    width: 260px;
+    flex-shrink: 0;
+    background-color: var(--sidebar-bg);
+    display: flex;
+    flex-direction: column;
+    padding: 15px;
+    z-index: 20;
+    box-shadow: 0 0 10px rgba(0,0,0,0.5);
+    overflow-y: auto;
+}
+
+#sidebar-left { 
+    border-right: 1px solid #333; 
+    overflow: hidden !important;
+}
+#champList {
+    flex-grow: 1;
+    overflow-y: auto;
+    margin-bottom: 10px;
+    padding-right: 4px;
+}
+#right-panel-wrapper {
+    width: 260px;
+    flex-shrink: 0;
+    background-color: var(--sidebar-bg);
+    border-left: 1px solid #333;
+    display: flex;
+    flex-direction: column;
+    z-index: 20;
+    box-shadow: 0 0 10px rgba(0,0,0,0.5);
+}
+#sidebar-right {
+    border-left: none;
+    box-shadow: none;
+    flex-grow: 1;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.section-title {
+    text-align: center;
+    margin-top: 15px;
+    margin-bottom: 10px;
+    color: var(--accent-color);
+    font-size: 1.1em;
+    border-bottom: 1px solid #444;
+    padding-bottom: 5px;
+}
+
+.search-box {
+    padding: 10px;
+    margin-bottom: 10px;
+    background: #333;
+    border: 1px solid #444;
+    color: white;
+    border-radius: 4px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.item-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    padding-right: 5px;
+}
+
+.icon-item {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 4px;
+    cursor: grab;
+    border: 1px solid #444;
+    transition: transform 0.1s;
+    background-color: #252525;
+    padding: 2px;
+    box-sizing: border-box;
+}
+.icon-item:hover { transform: scale(1.1); border-color: var(--accent-color); }
+.icon-item.selected {
+    border-color: var(--accent-color) !important;
+    box-shadow: 0 0 0 2.5px var(--accent-color), 0 0 8px rgba(208, 184, 108, 0.6) !important;
+    transform: scale(1.1);
+}
+
+/* 프리셋 컨테이너 & 버튼 */
+.preset-container {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+    margin-bottom: 25px;
+    min-height: 95px;
+    background: #252525;
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px dashed #666;
+    box-sizing: border-box;
+    cursor: grab;
+    align-items: center;
+}
+.preset-container:active {
+    cursor: grabbing;
+}
+.preset-placeholder {
+    grid-column: span 5;
+    color: #888;
+    font-size: 14px;
+    text-align: center;
+    pointer-events: none;
+    user-select: none;
+    font-weight: bold;
+    letter-spacing: -0.5px;
+}
+
+.preset-btn-group {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+.preset-btn {
+    flex: 1;
+    padding: 8px;
+    font-size: 13px;
+    font-weight: bold;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+.preset-btn.blue { background: #448aff; color: white; }
+.preset-btn.red { background: #ff5252; color: white; }
+.preset-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* --- 메인 영역 --- */
+#main-container {
+    flex-grow: 1;
+    flex-shrink: 1;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    min-width: 0;
+    overflow: hidden;
+}
+
+/* 툴바 */
+#top-toolbar {
+    height: 40px;
+    background-color: #222;
+    display: flex;
+    align-items: center;
+    padding: 0 15px;
+    border-bottom: 1px solid #333;
+    gap: 15px;
+}
+.toolbar-group { display: flex; gap: 10px; align-items: center; }
+.tool-btn {
+    background: #333; color: #eee; border: 1px solid #444;
+    padding: 5px 12px; border-radius: 3px; cursor: pointer; font-size: 0.9em;
+    white-space: nowrap;
+}
+.tool-btn:hover { background: #444; }
+.tool-btn:disabled { color: #666; cursor: not-allowed; }
+
+#map-area {
+    flex-grow: 1;
+    background-color: #111;
+    display: flex;
+    justify-content: flex-start;
+    align-items: flex-start;
+    position: relative;
+    overflow: auto;
+    user-select: none;
+    cursor: grab;
+}
+#map-area.panning {
+    cursor: grabbing;
+}
+
+#zoom-container {
+    width: var(--map-width);
+    height: var(--map-height);
+    position: relative;
+    flex-shrink: 0;
+    margin: auto;
+}
+
+#rift-map {
+    width: var(--map-width) !important;
+    height: var(--map-height) !important;
+    flex-shrink: 0;
+    aspect-ratio: 1203.3 / 800;
+    background-image: url("../images/Summoner's_Rift_map_s14.png");
+    background-size: 100% 100%;
+    background-position: center;
+    position: relative;
+    box-shadow: 0 0 30px rgba(0,0,0,0.8);
+    border: 2px solid #333;
+    margin: 0;
+}
+
+#structure-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; }
+.map-structure {
+    position: absolute; transform: translate(-50%, -50%);
+    cursor: pointer; pointer-events: auto;
+    transition: filter 0.2s; filter: drop-shadow(0 0 2px rgba(0,0,0,0.8));
+}
+.map-structure:hover { filter: brightness(1.3); z-index: 15; }
+.map-structure.destroyed { filter: grayscale(100%) brightness(0.3); opacity: 0.6; }
+
+#svg-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 50; }
+#svg-layer line {
+    pointer-events: auto !important;
+    cursor: pointer;
+}
+svg line.selected {
+    stroke: var(--accent-color) !important;
+    stroke-width: 4 !important;
+    filter: drop-shadow(0 0 5px var(--accent-color)) !important;
+}
+
+/* 배치된 오브젝트 */
+.placed-object {
+    position: absolute; transform: translate(-50%, -50%);
+    cursor: grab; z-index: 100;
+    filter: drop-shadow(0 0 3px rgba(0,0,0,0.8));
+}
+.placed-object:active { cursor: grabbing; }
+
+.placed-champion {
+    border-radius: 50%;
+    border: 1.5px solid #fff;
+    z-index: 110;
+    background-color: #000;
+    box-sizing: border-box;
+}
+.placed-icon { 
+    width: 32px; height: 32px; z-index: 105; 
+    border-radius: 50%; border: 1.5px solid #fff; background-color: #000;
+    box-shadow: 0 0 5px rgba(0,0,0,0.5);
+    box-sizing: border-box;
+}
+.placed-minion {
+    width: 44px; height: 44px; z-index: 105;
+    border: none !important; background-color: transparent !important;
+    box-shadow: none !important;
+    object-fit: contain;
+    transform: translate(-50%, -50%) scaleX(1);
+    transition: transform 0.1s;
+}
+.placed-minion.flip-dir {
+    transform: translate(-50%, -50%) scaleX(-1) !important;
+}
+.placed-minion.minion-blue-glow {
+    filter: drop-shadow(0px 1px 2px rgba(0, 0, 0, 0.7)) 
+            drop-shadow(0px 0px 3px rgba(0, 229, 255, 0.4)) !important;
+}
+.placed-minion.minion-red-glow {
+    filter: drop-shadow(0px 1px 2px rgba(0, 0, 0, 0.7)) 
+            drop-shadow(0px 0px 3px rgba(255, 82, 82, 0.45)) !important;
+}
+.placed-minion.selected {
+    border: 1.5px solid var(--accent-color) !important;
+    border-radius: 4px;
+    box-sizing: border-box;
+    box-shadow: 0 0 8px rgba(208, 184, 108, 0.7) !important;
+}
+
+.placed-object.selected {
+    z-index: 120 !important;
+}
+
+.placed-champion.selected,
+.placed-icon.selected {
+    border-color: var(--accent-color) !important;
+    box-shadow: 0 0 8px rgba(208, 184, 108, 0.8) !important;
+}
+
+.arrow-control {
+    width: 12px; height: 12px; border-radius: 50%; position: absolute;
+    cursor: crosshair; z-index: 101; transform: translate(-50%, -50%);
+    display: none;
+    opacity: 0; /* 평소에는 보이지 않도록 투명 처리 */
+    transition: opacity 0.15s ease-in-out;
+}
+/* 보이지 않는 히트박스를 만들어 마우스 호버가 쉽게 인식되도록 함 */
+.arrow-control::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 40px; /* 기존 12px보다 훨씬 넓은 40px 영역 제공 */
+    height: 40px;
+    border-radius: 50%;
+    background: transparent;
+}
+.arrow-control.visible {
+    display: block;
+}
+/* 마우스를 올렸을 때(hover) 또는 드래그 중(dragging)일 때만 나타남 (.selected 제외로 마우스를 떼면 바로 숨김) */
+.arrow-control.visible:hover,
+.arrow-control.visible.dragging {
+    opacity: 1;
+}
+.arrow-control.end { background-color: #ff5252; border: 2px solid white; }
+.arrow-control.start { background-color: #69f0ae; border: 2px solid white; cursor: grab; width: 14px; height: 14px; z-index: 102; }
+.arrow-control.selected {
+    border-color: var(--accent-color) !important;
+    box-shadow: 0 0 0 2px var(--accent-color), 0 0 8px rgba(208, 184, 108, 0.6) !important;
+    z-index: 120 !important;
+}
+
+/* 스텝 전환 애니메이션 시에만 transition 사용 */
+#rift-map.animating .placed-object {
+    transition: top 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), left 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), width 0.3s, height 0.3s !important;
+}
+#rift-map.animating .arrow-control {
+    transition: top 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), left 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), width 0.3s, height 0.3s !important;
+}
+
+/* --- 타임라인 --- */
+#timeline {
+    height: 90px;
+    background-color: var(--timeline-bg);
+    border-top: 1px solid #444;
+    display: flex;
+    align-items: center;
+    padding: 0 15px;
+    gap: 10px;
+    overflow-x: auto;
+    z-index: 200;
+}
+
+.step-scroll-area {
+    display: flex; gap: 8px; overflow-x: auto; flex-grow: 1; padding: 10px 0;
+    scrollbar-width: thin; scrollbar-color: #555 #2a2a2a;
+}
+
+.step-btn {
+    background: #444; color: #aaa; border: none; padding: 8px 15px;
+    border-radius: 4px; cursor: pointer; font-weight: bold; min-width: 60px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-size: 13px; position: relative;
+}
+.step-btn.active { background: var(--step-active); color: #000; box-shadow: 0 0 8px var(--step-active); }
+.step-number { font-size: 1.1em; margin-bottom: 2px; }
+
+.control-group {
+    display: flex; gap: 5px; margin-left: 10px; border-left: 1px solid #555; padding-left: 15px;
+    flex-shrink: 0; align-items: center;
+}
+.control-btn { 
+    background: var(--accent-color); color: #000; border: none; 
+    padding: 8px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 13px; 
+    white-space: nowrap;
+}
+.btn-green { background: #69f0ae; color: #000; }
+.btn-blue { background: #448aff; color: white; }
+.btn-red { background: #ff5252; color: white; }
+.btn-gray { background: #555; color: #ddd; }
+
+/* 컨텍스트 메뉴 */
+#context-menu {
+    position: absolute; display: none; background: #333; border: 1px solid #555;
+    box-shadow: 2px 2px 10px rgba(0,0,0,0.5); z-index: 1000; min-width: 150px; border-radius: 4px; padding: 5px 0;
+}
+.menu-item { padding: 8px 15px; cursor: pointer; color: #eee; font-size: 14px; }
+.menu-item:hover { background-color: #444; }
+.menu-item.danger { color: #ff6b6b; }
+
+/* 줌 컨트롤 UI */
+#zoom-controls {
+    display: flex;
+    gap: 8px;
+    background: rgba(0,0,0,0.85);
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid #444;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.6);
+    align-items: center;
+    justify-content: center;
+    margin: 15px auto;
+    width: fit-content;
+    box-sizing: border-box;
+}
+.zoom-btn {
+    background: #333;
+    color: #fff;
+    border: 1px solid #555;
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+}
+.zoom-btn:hover { background: #555; }
+#zoom-indicator {
+    color: #fff;
+    font-size: 13px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    padding: 0 4px;
+    min-width: 50px;
+    justify-content: center;
+    font-family: monospace;
+}
+/* 구조물 위치 조정 모드 스타일 */
+.map-structure.editable {
+    outline: 2px dashed var(--accent-color);
+    box-shadow: 0 0 10px var(--accent-color);
+    border-radius: 50%;
+    cursor: grab;
+    animation: pulse-border 1.5s infinite alternate;
+}
+.map-structure.editable:active {
+    cursor: grabbing;
+}
+@keyframes pulse-border {
+    from { outline-color: var(--accent-color); box-shadow: 0 0 5px var(--accent-color); }
+    to { outline-color: #ff5252; box-shadow: 0 0 15px #ff5252; }
+}
+.tool-btn.active {
+    background-color: var(--step-active) !important;
+    color: black !important;
+    border-color: var(--step-active) !important;
+    font-weight: bold;
+    box-shadow: 0 0 10px rgba(10, 203, 230, 0.4);
+}
+#rift-map.drawing-active {
+    cursor: crosshair !important;
+}
+#rift-map.eraser-active {
+    cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'><circle cx='16' cy='16' r='12' stroke='%23ffffff' stroke-width='2' fill='rgba(255,255,255,0.3)'/></svg>") 16 16, pointer !important;
+}
+.color-dot {
+    transition: transform 0.1s, border-color 0.1s, box-shadow 0.1s;
+}
+.color-dot:hover {
+    transform: scale(1.25);
+}
+.color-dot.active {
+    border-color: #fff !important;
+    transform: scale(1.35);
+    box-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
+}
+.width-btn.active {
+    background-color: var(--accent-color) !important;
+    color: black !important;
+    border-color: var(--accent-color) !important;
+    font-weight: bold;
+}
+#rift-map {
+    cursor: crosshair !important;
+}
+.placed-object {
+    position: absolute; transform: translate(-50%, -50%);
+    cursor: grab !important; z-index: 100;
+    filter: drop-shadow(0 0 3px rgba(0,0,0,0.8));
+}
+.placed-object:active { cursor: grabbing !important; }
+.arrow-control.start { background-color: #69f0ae; border: 2px solid white; cursor: grab !important; width: 14px; height: 14px; z-index: 102; }
+
+/* --- 우측 사이드바 탭 스타일 --- */
+.sidebar-tabs .tab-btn:hover {
+    color: #fff !important;
+    background: rgba(255, 255, 255, 0.05) !important;
+}
+.sidebar-tabs .tab-btn.active {
+    border-bottom-color: var(--accent-color) !important;
+    color: var(--accent-color) !important;
+}
+
+/* --- 도움말 모달 --- */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(5px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+.modal-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+.modal-content {
+    background-color: #1e1e1e;
+    border: 1px solid #333;
+    border-radius: 12px;
+    width: 550px;
+    max-width: 90%;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transform: scale(0.9);
+    transition: transform 0.3s ease;
+}
+.modal-overlay.active .modal-content {
+    transform: scale(1);
+}
+.modal-header {
+    padding: 15px 20px;
+    border-bottom: 1px solid #333;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #252525;
+}
+.modal-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    color: var(--accent-color);
+}
+.close-btn {
+    font-size: 1.5rem;
+    color: #888;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+.close-btn:hover {
+    color: #fff;
+}
+.modal-body {
+    padding: 20px;
+    max-height: 60vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+.help-section h3 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 1rem;
+    color: #fff;
+    border-bottom: 1px solid #333;
+    padding-bottom: 5px;
+}
+.help-section ul {
+    margin: 0;
+    padding-left: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.help-section li {
+    font-size: 0.9rem;
+    color: #ccc;
+}
+.help-section kbd {
+    background-color: #333;
+    color: #fff;
+    border: 1px solid #555;
+    border-radius: 3px;
+    padding: 2px 6px;
+    font-family: monospace;
+    font-size: 0.85em;
+}
+.modal-footer {
+    padding: 15px 20px;
+    border-top: 1px solid #333;
+    display: flex;
+    justify-content: flex-end;
+    background: #252525;
+}
+
+/* --- OBS 전용 및 구조물 파괴 스타일 --- */
+.placed-structure {
+    transition: filter 0.3s ease, opacity 0.3s ease;
+}
+.placed-structure.destroyed {
+    filter: grayscale(100%) brightness(40%) contrast(70%) !important;
+    opacity: 0.6;
+}
+
