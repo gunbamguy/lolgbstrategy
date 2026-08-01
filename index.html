@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>구도 (GUDO) - LoL 통합 도구 허브 | 룬 · 아이템 · 전략</title>
+    <meta name="description" content="리그 오브 레전드(LoL) 룬 빌드 익스포터, 아이템 템트리 익스포터, 전략 보드를 한곳에서. 군밤가이 제작.">
+    <link rel="stylesheet" href="css/hub.css">
+</head>
+<body>
+    <div class="hub-container">
+        <!-- 🏠 허브 헤더 -->
+        <header class="hub-header">
+            <div class="hub-badge">GUDO · 구도</div>
+            <h1>LoL 통합 도구 허브</h1>
+            <p class="subtitle">리그 오브 레전드 룬 빌드, 아이템 템트리, 전략 보드를 한곳에서 사용하세요</p>
+        </header>
+
+        <hr class="hub-divider">
+
+        <!-- 🃏 도구 카드 그리드 -->
+        <div class="tools-grid">
+
+            <!-- ⚡ 룬 익스포터 카드 -->
+            <a href="rune/index.html" class="tool-card card-rune" id="cardRune">
+                <div class="card-accent"></div>
+                <div class="card-icon">⚡</div>
+                <h2 class="card-title">룬 익스포터</h2>
+                <p class="card-desc">
+                    나만의 LoL 룬 페이지를 구성하고
+                    고화질 PNG 이미지로 내보내세요.
+                    레이아웃, 로고, 캔버스 크기까지 커스터마이징 가능합니다.
+                </p>
+                <div class="card-tags">
+                    <span class="tag">룬 빌드</span>
+                    <span class="tag">PNG 내보내기</span>
+                    <span class="tag">커스텀 로고</span>
+                </div>
+                <div class="card-cta">
+                    시작하기 <span class="arrow">→</span>
+                </div>
+            </a>
+
+            <!-- ⚔️ 아이템 익스포터 카드 -->
+            <a href="rune/index.html#item" class="tool-card card-item" id="cardItem">
+                <div class="card-accent"></div>
+                <div class="card-icon">⚔️</div>
+                <h2 class="card-title">아이템 익스포터</h2>
+                <p class="card-desc">
+                    아이템 빌드 슬롯을 구성하고
+                    콤팩트 가로 템트리를 한눈에 확인.
+                    투명 배경 PNG로 깔끔하게 내보내세요.
+                </p>
+                <div class="card-tags">
+                    <span class="tag">아이템 빌드</span>
+                    <span class="tag">템트리</span>
+                    <span class="tag">투명 PNG</span>
+                </div>
+                <div class="card-cta">
+                    시작하기 <span class="arrow">→</span>
+                </div>
+            </a>
+
+            <!-- 🗺️ 전략 보드 카드 -->
+            <a href="strategy/index.html" class="tool-card card-strategy" id="cardStrategy">
+                <div class="card-accent"></div>
+                <div class="card-icon">🗺️</div>
+                <h2 class="card-title">전략 보드</h2>
+                <p class="card-desc">
+                    소환사의 협곡 맵 위에 챔피언을 배치하고
+                    펜·화살표로 전략을 그려보세요.
+                    타임라인 스텝 & OBS 방송 송출까지 지원합니다.
+                </p>
+                <div class="card-tags">
+                    <span class="tag">전략 보드</span>
+                    <span class="tag">타임라인</span>
+                    <span class="tag">OBS 송출</span>
+                </div>
+                <div class="card-cta">
+                    시작하기 <span class="arrow">→</span>
+                </div>
+            </a>
+
+        </div>
+
+        <!-- 🏷️ 허브 푸터 -->
+        <footer class="hub-footer">
+            <p>제작: <strong>군밤가이</strong> | 
+                <a href="https://cyborgman.tistory.com/" target="_blank" rel="noopener">블로그</a> | 
+                <a href="https://gunbamguy.github.io/gudo/" target="_blank" rel="noopener">구도 익스포터</a>
+            </p>
+        </footer>
+    </div>
+
+    <script>
+        // 아이템 익스포터 카드 클릭 시 해시 기반 자동 탭 전환
+        document.getElementById('cardItem').addEventListener('click', function(e) {
+            // 아이템 모드로 자동 전환하기 위해 hash를 #item으로 설정
+            // rune/index.html의 app.js에서 해시를 감지하여 아이템 탭으로 전환
+        });
+    </script>
+</body>
+</html>

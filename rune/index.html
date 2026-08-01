@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>리그 오브 레전드 익스포터 통합 에디터 (룬 & 아이템)</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@400;600;700;900&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- 메인 통합 헤더 -->
+        <header class="app-header">
+            <div class="logo-area">
+                <span class="lol-badge">LoL</span>
+                <h1 id="appTitle">룬 빌드 엑스포터</h1>
+            </div>
+            <p class="subtitle" id="appSubtitle">나만의 리그 오브 레전드 룬 페이지를 구성하고 이미지(PNG)로 내보내세요</p>
+        </header>
+
+        <!-- ⚡ 1. 룬 익스포터 메인 영역 -->
+        <main class="main-content" id="runeAppView">
+            <div class="rune-sections" id="runeSections">
+                <!-- 주룬 선택 카드 -->
+                <section id="main-runes" class="rune-card">
+                    <div class="card-header">
+                        <h2><span class="step-num">1</span> 주 빌드 (Main Tree)</h2>
+                    </div>
+                    <div class="rune-picker-group">
+                        <label class="group-title">주룬 계열 선택</label>
+                        <div class="rune-images horizontal-rune-images" id="mainRuneImages"></div>
+                    </div>
+                    <div class="rune-picker-group">
+                        <label class="group-title">주 빌드 룬 선택</label>
+                        <div class="rune-images vertical-rune-images" id="mainSecondaryRuneImages"></div>
+                    </div>
+                </section>
+
+                <!-- 서브룬 선택 카드 -->
+                <section id="sub-runes" class="rune-card">
+                    <div class="card-header">
+                        <h2><span class="step-num">2</span> 보조 빌드 (Sub Tree & Shards)</h2>
+                    </div>
+                    <div class="rune-picker-group">
+                        <label class="group-title">보조 계열 선택</label>
+                        <div class="rune-images horizontal-rune-images" id="subRuneImages"></div>
+                    </div>
+                    <div class="rune-picker-group">
+                        <label class="group-title">보조 빌드 룬 선택 (최대 2개)</label>
+                        <div class="rune-images vertical-rune-images" id="subSecondaryRuneImages"></div>
+                    </div>
+                    <div class="rune-picker-group">
+                        <label class="group-title">능력치 파편 선택 (각 슬롯 1개)</label>
+                        <div class="rune-shard-slots" id="runeShardSlots">
+                            <div class="rune-shard-slot" id="runeShardSlot1"></div>
+                            <div class="rune-shard-slot" id="runeShardSlot2"></div>
+                            <div class="rune-shard-slot" id="runeShardSlot3"></div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- 룬 내보내기 & 커스텀 컨트롤 패널 -->
+            <section class="control-panel rune-card">
+                <div class="card-header">
+                    <h2><span class="step-num">3</span> 룬 내보내기 설정 & 커스텀</h2>
+                </div>
+
+                <div class="control-grid">
+                    <!-- 텍스트 커스텀 -->
+                    <div class="control-group text-custom-group">
+                        <label for="textInput">커스텀 텍스트 (제목 / 챔피언명)</label>
+                        <input type="text" id="textInput" placeholder="예: [칼바람] 사기 룬 세팅" aria-label="텍스트 입력">
+                        
+                        <div class="slider-row">
+                            <div class="slider-item">
+                                <label for="fontSizeRange">글자 크기: <span id="fontSizeValue">32px</span></label>
+                                <input type="range" id="fontSizeRange" min="16" max="64" value="32">
+                            </div>
+                            <div class="color-item">
+                                <label for="textColor">글자 색상</label>
+                                <input type="color" id="textColor" value="#F0E6D2">
+                            </div>
+                        </div>
+                        <div id="textDisplay" class="text-display-preview"></div>
+                    </div>
+
+                    <!-- 스타일 및 로고 커스텀 -->
+                    <div class="control-group style-custom-group">
+                        <div class="checkbox-row">
+                            <div class="checkbox-option">
+                                <input type="checkbox" id="showLogoCheck">
+                                <label for="showLogoCheck">상단 로고 표시</label>
+                            </div>
+                            <!-- 모달 열기 버튼 -->
+                            <button type="button" id="btnOpenLayoutModal" class="btn-modal-trigger">
+                                ⚙️ 레이아웃 & 로고/캔버스 크기 조절
+                            </button>
+                        </div>
+
+                        <!-- 클립보드 붙여넣기 및 로고 파일 박스 -->
+                        <div class="logo-upload-box" id="logoDropZone">
+                            <div class="upload-controls">
+                                <label for="logoFileInput" class="btn-file-upload">
+                                    📁 로고 파일 선택
+                                </label>
+                                <input type="file" id="logoFileInput" accept="image/*" style="display: none;">
+                                <span class="paste-hint">또는 <strong>Ctrl+V</strong>로 클립보드 붙여넣기</span>
+                            </div>
+                            <div id="customLogoPreviewArea" class="logo-preview-area hidden">
+                                <img id="customLogoImgPreview" alt="커스텀 로고 미리보기">
+                                <button type="button" id="btnRemoveCustomLogo" class="btn-remove-logo" title="로고 삭제">&times;</button>
+                            </div>
+                        </div>
+
+                        <div class="slider-item">
+                            <label for="opacityRange">배경 투명도: <span id="opacityValue">0.9</span></label>
+                            <input type="range" id="opacityRange" min="0" max="1" step="0.05" value="0.9">
+                        </div>
+                        <div class="slider-item">
+                            <label for="cornerRadiusRange">모서리 둥글기: <span id="cornerRadiusValue">16</span>px</label>
+                            <input type="range" id="cornerRadiusRange" min="0" max="40" value="16">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 룬 내보내기 버튼 그룹 -->
+                <div class="export-buttons-area">
+                    <div class="button-group">
+                        <button type="button" id="btnExportBoth" class="btn btn-primary">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                            전체 룬 카드 PNG 저장
+                        </button>
+                        <button type="button" id="btnExportMain" class="btn btn-secondary">주 빌드 저장</button>
+                        <button type="button" id="btnExportSub" class="btn btn-secondary">보조 빌드 저장</button>
+                        <button type="button" id="btnExportTransparent" class="btn btn-accent">선택 룬만 강조 저장</button>
+                        <button type="button" id="btnReset" class="btn btn-danger">초기화</button>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- ⚔️ 2. 아이템 익스포터 메인 영역 (초기 숨김) -->
+        <main class="main-content hidden" id="itemAppView">
+            <section class="item-card">
+                <div class="card-header">
+                    <h2>⚔️ 아이템 빌드 슬롯 구성 (4+3 스타일)</h2>
+                </div>
+
+                <!-- 아이템 슬롯 그리드 -->
+                <div id="item-container" class="item-container-grid">
+                    <div class="item-slot" data-slot="1" title="아이템 슬롯 1"></div>
+                    <div class="item-slot" data-slot="2" title="아이템 슬롯 2"></div>
+                    <div class="item-slot" data-slot="3" title="아이템 슬롯 3"></div>
+                    <div class="item-slot ward-slot" data-slot="4" title="장신구/와드 슬롯"></div>
+                    <div class="item-slot" data-slot="5" title="아이템 슬롯 4"></div>
+                    <div class="item-slot" data-slot="6" title="아이템 슬롯 5"></div>
+                    <div class="item-slot" data-slot="7" title="아이템 슬롯 6"></div>
+                </div>
+
+                <!-- 아이템 컨트롤 버튼 그룹 -->
+                <div class="button-group">
+                    <button type="button" id="export-all-slots-png-button" class="btn btn-primary">📸 슬롯 전체 PNG 내보내기</button>
+                    <button type="button" id="select-button" class="btn btn-secondary">➕ 템트리 라인 추가</button>
+                    <button type="button" id="cancel-last-button" class="btn btn-danger">🔙 마지막 섹터 취소</button>
+                    <button type="button" id="clear-button" class="btn btn-secondary">🗑️ 슬롯 초기화</button>
+                    <button type="button" id="export-png-button" class="btn btn-accent">PNG 템트리 내보내기</button>
+                    <button type="button" id="export-jpg-button" class="btn btn-secondary">JPG 템트리 내보내기</button>
+                </div>
+            </section>
+
+            <!-- 🎯 콤팩트 가로 템트리 섹터 히스토리 -->
+            <section id="capture-section" class="item-card">
+                <div class="card-header">
+                    <h2>📋 아이템 빌드 트리 (한눈에 보기)</h2>
+                </div>
+                <div id="capture-container">
+                    <!-- 가로 흐름 콤팩트 템트리 섹터들이 ➔ 화살표와 함께 생성됩니다 -->
+                </div>
+            </section>
+        </main>
+
+        <!-- 🎯 푸터 바로 위 룬 / 아이템 에디터 선택 탭 버튼 바 -->
+        <div class="footer-app-tabs">
+            <button type="button" class="tab-btn active" id="tabRuneMode">⚡ 룬 엑스포터</button>
+            <button type="button" class="tab-btn" id="tabItemMode">⚔️ 아이템 엑스포터</button>
+        </div>
+
+        <!-- ⚙️ 레이아웃 세부 조절 모달 -->
+        <div id="layoutModal" class="modal-overlay hidden">
+            <div class="modal-card modal-large">
+                <div class="modal-header">
+                    <h3>⚙️ 레이아웃 / 로고 / 캔버스 크기 조절</h3>
+                    <button type="button" id="btnCloseModal" class="btn-close-modal">&times;</button>
+                </div>
+                <div class="modal-body-split">
+                    <div class="modal-controls">
+                        <div class="modal-slider-group">
+                            <label for="modalCanvasScaleRange">🎨 전체 캔버스 크기 (해상도 배율): <span id="modalCanvasScaleVal">100</span>%</label>
+                            <input type="range" id="modalCanvasScaleRange" min="60" max="150" value="100">
+                        </div>
+                        <div class="modal-slider-group">
+                            <label for="modalLogoSizeRange">🖼️ 상단 로고 크기 (높이): <span id="modalLogoSizeVal">44</span>px</label>
+                            <input type="range" id="modalLogoSizeRange" min="20" max="110" value="44">
+                        </div>
+                        <div class="modal-slider-group">
+                            <label for="modalColGapRange">주룬-부룬 가운데 간격: <span id="modalColGapVal">70</span>px</label>
+                            <input type="range" id="modalColGapRange" min="0" max="150" value="70">
+                        </div>
+                        <div class="modal-slider-group">
+                            <label for="modalRuneSizeRange">룬 아이콘 크기: <span id="modalRuneSizeVal">80</span>px</label>
+                            <input type="range" id="modalRuneSizeRange" min="50" max="110" value="80">
+                        </div>
+                        <div class="modal-slider-group">
+                            <label for="modalSlotGapYRange">세로 슬롯 간격: <span id="modalSlotGapYVal">22</span>px</label>
+                            <input type="range" id="modalSlotGapYRange" min="8" max="45" value="22">
+                        </div>
+                        <div class="modal-slider-group">
+                            <label for="modalPaddingRange">상하좌우 패딩 여백: <span id="modalPaddingVal">64</span>px</label>
+                            <input type="range" id="modalPaddingRange" min="20" max="100" value="64">
+                        </div>
+                        <div class="modal-slider-group">
+                            <label for="modalLogoOffsetYRange">로고 위치 미세조정: <span id="modalLogoOffsetYVal">-12</span>px</label>
+                            <input type="range" id="modalLogoOffsetYRange" min="-40" max="30" value="-12">
+                        </div>
+                    </div>
+
+                    <div class="modal-preview-box">
+                        <label class="group-title">🔍 실시간 룬 카드 캔버스 미리보기</label>
+                        <div class="modal-canvas-wrapper">
+                            <canvas id="modalPreviewCanvas"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <div class="app-switcher-mini">
+                        <button type="button" class="btn-app-switch active" id="btnSwitchRune" title="룬 익스포터">⚡ 룬 익스포터</button>
+                        <button type="button" class="btn-app-switch" id="btnSwitchItem" title="아이템 익스포터">⚔️ 아이템 익스포터</button>
+                    </div>
+                    <div class="modal-footer-btns">
+                        <button type="button" id="btnResetModalLayout" class="btn btn-secondary">기본값 복원</button>
+                        <button type="button" id="btnSaveModalLayout" class="btn btn-primary">적용 완료</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 아이템 선택 카테고리 팝업 모달 -->
+        <div id="category-popup" class="hidden">
+            <h3>🏷️ 아이템 카테고리 선택</h3>
+            <div id="category-list" class="category-grid"></div>
+            <button type="button" id="close-popup" class="btn btn-secondary">닫기</button>
+        </div>
+
+        <!-- 아이템 그리드 팝업 모달 -->
+        <div id="item-popup" class="hidden">
+            <h3>🗡️ 아이템 선택</h3>
+            <div id="items-list" class="item-grid"></div>
+            <button type="button" id="close-item-popup" class="btn btn-secondary">닫기</button>
+        </div>
+
+        <!-- 숨겨진 내보내기 캔버스 -->
+        <canvas id="exportCanvas"></canvas>
+
+        <!-- 통합 푸터 -->
+        <footer class="footer">
+            <p>제작: <strong>군밤가이</strong> | 홈페이지: <a href="https://cyborgman.tistory.com/" target="_blank" rel="noopener">블로그</a> | 구도: <a href="https://gunbamguy.github.io/gudo/" target="_blank" rel="noopener">구도 익스포터</a></p>
+        </footer>
+    </div>
+
+    <!-- 통합 스크립트 연결 모듈 -->
+    <script src="js/config.js"></script>
+    <script src="js/storage.js"></script>
+    <script src="js/canvasEngine.js"></script>
+    <script src="js/itemEngine.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
