@@ -885,23 +885,68 @@ body {
     font-size: 1.15rem;
 }
 
-#item-popup h3 {
-    cursor: move;
-    user-select: none;
+/* 윗줄 구획 분할 모달 헤더 바 */
+.modal-top-bar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 6px 10px;
-    background: rgba(200, 155, 60, 0.1);
+    gap: 12px;
+    margin-bottom: 14px;
+    background: rgba(200, 155, 60, 0.12);
+    border: 1px dashed rgba(200, 155, 60, 0.35);
     border-radius: var(--radius-sm);
-    border: 1px dashed rgba(200, 155, 60, 0.3);
+    padding: 6px 12px;
 }
 
-#item-popup h3::after {
-    content: '✋ 드래그하여 이동';
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    font-weight: 400;
+.modal-drag-zone {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: grab;
+    user-select: none;
+    flex: 1;
+    color: var(--gold-light);
+    font-size: 0.85rem;
+    font-weight: 700;
+}
+
+.modal-drag-zone:active {
+    cursor: grabbing;
+}
+
+.modal-drag-zone .drag-icon {
+    font-size: 1.1rem;
+}
+
+.modal-drag-zone .drag-text {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+}
+
+.modal-top-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-close-mini {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-secondary);
+    border: none;
+    border-radius: 4px;
+    width: 28px;
+    height: 28px;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition);
+}
+
+.btn-close-mini:hover {
+    background: var(--accent-red);
+    color: white;
 }
 
 .item-search-wrapper {
@@ -1160,6 +1205,145 @@ input[type="color"] {
 
 #exportCanvas {
     display: none;
+}
+
+/* 📦 Preset Management System Styles */
+.preset-list-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 14px;
+    margin-top: 14px;
+}
+
+.preset-card {
+    background: rgba(0, 0, 0, 0.45);
+    border: 1px solid rgba(200, 155, 60, 0.3);
+    border-radius: var(--radius-md);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    transition: var(--transition);
+}
+
+.preset-card:hover {
+    border-color: var(--gold-primary);
+    box-shadow: 0 4px 16px rgba(200, 155, 60, 0.2);
+}
+
+.preset-card.active-preset {
+    border-color: var(--gold-hover);
+    background: rgba(200, 155, 60, 0.12);
+    box-shadow: 0 0 16px rgba(200, 155, 60, 0.4);
+}
+
+.preset-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.preset-card-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--gold-light);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.preset-items-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-height: 40px;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 8px;
+    border-radius: var(--radius-sm);
+}
+
+.preset-items-preview img {
+    width: 34px;
+    height: 34px;
+    border-radius: 4px;
+    object-fit: cover;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.preset-card-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+.preset-chip-item {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid var(--gold-primary);
+    border-radius: 6px;
+    padding: 4px 8px 4px 4px;
+    gap: 6px;
+}
+
+.preset-chip-item img {
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+}
+
+.preset-chip-item .chip-remove-btn {
+    background: var(--accent-red);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 16px;
+    height: 16px;
+    font-size: 10px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* 아이템 선택 모달 내 내 프리셋 추천 구역 */
+.preset-recommend-section {
+    margin-bottom: 16px;
+    background: rgba(200, 155, 60, 0.1);
+    border: 1px solid rgba(200, 155, 60, 0.35);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+}
+
+.preset-recommend-title {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--gold-light);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.preset-recommend-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.preset-recommend-grid .item-grid-item img {
+    width: 42px;
+    height: 42px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.preset-recommend-grid .item-grid-item img:hover {
+    transform: scale(1.15);
+    box-shadow: 0 0 10px var(--gold-primary);
 }
 
 /* Footer */

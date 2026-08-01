@@ -182,6 +182,23 @@
                     <!-- 가로 흐름 콤팩트 템트리 섹터들이 ➔ 화살표와 함께 생성됩니다 -->
                 </div>
             </section>
+
+            <!-- 📦 커스텀 프리셋 관리 카드 -->
+            <section id="preset-section" class="item-card">
+                <div class="card-header" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+                    <h2>📦 커스텀 프리셋 관리</h2>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button type="button" id="btn-export-all-presets-txt" class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.82rem;">💾 TXT 파일 저장</button>
+                        <button type="button" id="btn-import-presets-txt-file" class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.82rem;">📂 TXT 파일 불러오기</button>
+                        <input type="file" id="preset-file-input" accept=".txt,.json" style="display: none;">
+                        <button type="button" id="btn-import-preset-code" class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.82rem;">📥 코드 입력</button>
+                        <button type="button" id="btn-create-preset" class="btn btn-primary" style="padding: 6px 14px; font-size: 0.85rem;">➕ 새 프리셋 생성</button>
+                    </div>
+                </div>
+                <div id="preset-list-container" class="preset-list-grid">
+                    <!-- 생성된 프리셋 카드들이 렌더링됩니다 -->
+                </div>
+            </section>
         </main>
 
         <!-- 🎯 푸터 바로 위 룬 / 아이템 에디터 선택 탭 버튼 바 -->
@@ -259,9 +276,16 @@
 
         <!-- 아이템 그리드 팝업 모달 -->
         <div id="item-popup" class="hidden">
-            <div class="modal-top-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-                <h3 style="margin-bottom: 0;">🗡️ 아이템 선택</h3>
-                <button type="button" id="modal-add-tree-btn" class="btn btn-primary" style="padding: 6px 14px; font-size: 0.85rem;">✏️ 템트리 라인 수정</button>
+            <!-- 윗줄 구역 분할 헤더 -->
+            <div class="modal-top-bar">
+                <div class="modal-drag-zone" id="item-modal-drag-handle">
+                    <span class="drag-icon">✋</span>
+                    <span class="drag-text">이곳을 잡고 드래그하여 이동</span>
+                </div>
+                <div class="modal-top-actions">
+                    <button type="button" id="modal-add-tree-btn" class="btn btn-primary" style="padding: 6px 14px; font-size: 0.85rem;">✏️ 템트리 라인 수정</button>
+                    <button type="button" id="close-item-popup-top" class="btn-close-mini" title="팝업 닫기">✕</button>
+                </div>
             </div>
             <div class="item-search-wrapper">
                 <input type="text" id="item-search-input" placeholder="🔍 아이템 이름 또는 초성 검색 (예: ㅁㅈㅇ, 몰왕, 무대)..." autocomplete="off">
@@ -270,6 +294,35 @@
             <div id="item-category-tabs" class="category-tabs-bar"></div>
             <div id="items-list" class="item-grid"></div>
             <button type="button" id="close-item-popup" class="btn btn-secondary">닫기</button>
+        </div>
+
+        <!-- 📦 프리셋 구성 편집 모달 -->
+        <div id="preset-modal" class="modal-overlay hidden">
+            <div class="modal-card" style="max-width: 520px; width: 90%;">
+                <div class="modal-header">
+                    <h3 id="preset-modal-title" style="color: var(--gold-light);">📦 프리셋 구성</h3>
+                    <button type="button" id="close-preset-modal" class="btn-close">✕</button>
+                </div>
+                <div class="modal-body" style="display: flex; flex-direction: column; gap: 16px; padding: 16px 0;">
+                    <div>
+                        <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; color: var(--gold-light);">프리셋 이름:</label>
+                        <input type="text" id="preset-name-input" placeholder="예: 브루저 필수 아이템 모음" style="width: 100%; padding: 10px 14px; background: rgba(0,0,0,0.5); border: 1px solid var(--gold-primary); border-radius: var(--radius-sm); color: #fff;">
+                    </div>
+                    <div>
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                            <label style="font-size: 0.85rem; font-weight: 600; color: var(--gold-light);">포함된 아이템 목록 (<span id="preset-item-count">0</span>개):</label>
+                            <button type="button" id="btn-add-item-to-preset" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.78rem;">➕ 아이템 검색 추가</button>
+                        </div>
+                        <div id="preset-item-collection" class="preset-items-grid" style="display: flex; flex-wrap: wrap; gap: 8px; min-height: 80px; padding: 12px; background: rgba(0,0,0,0.4); border: 1px dashed rgba(200,155,60,0.3); border-radius: var(--radius-sm); align-items: center;">
+                            <!-- 프리셋 아이템들이 추가됩니다 -->
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px;">
+                    <button type="button" id="btn-cancel-preset" class="btn btn-secondary">취소</button>
+                    <button type="button" id="btn-save-preset" class="btn btn-primary">💾 프리셋 저장</button>
+                </div>
+            </div>
         </div>
 
         <!-- 숨겨진 내보내기 캔버스 -->

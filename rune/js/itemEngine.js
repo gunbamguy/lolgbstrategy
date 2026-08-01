@@ -1,5 +1,5 @@
 // ==========================================
-// ⚔️ 아이템 익스포터 엔진 모듈 (Item Engine)
+// ⚔️ 아이템 익스포터 엔진 모듈 (Item Engine + Preset System)
 // ==========================================
 
 let itemVersion = '';
@@ -7,6 +7,12 @@ let itemMap = {};
 let selectedItemSlot = null;
 let currentCategory = null;
 let activeSectorEl = null;
+
+// 📦 커스텀 프리셋 시스템 전용 변수
+let presets = [];
+let activePresetId = null;
+let editingPreset = null;
+let isSelectingForPreset = false;
 
 const tagTranslations = {
     "Boots": "신발",
@@ -77,6 +83,23 @@ function matchItem(item, query) {
     return false;
 }
 
+// 🔤 Base64 UTF-8 안전 인코딩 / 디코딩 유틸리티 (다른 PC 프리셋 호환)
+function toBase64(str) {
+    try {
+        return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (match, p1) => String.fromCharCode('0x' + p1)));
+    } catch (e) {
+        return '';
+    }
+}
+
+function fromBase64(str) {
+    try {
+        return decodeURIComponent(Array.prototype.map.call(atob(str.trim()), (c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+    } catch (e) {
+        return null;
+    }
+}
+
 // 🖐️ 모달 헤더 드래그 이동 유틸리티 함수
 function makeModalDraggable(modalEl, handleEl) {
     if (!modalEl || !handleEl) return;
@@ -131,6 +154,7 @@ window.ITEM_ENGINE = {
         }
 
         this.bindEvents();
+        this.loadPresetsFromStorage();
     },
 
     setActiveSlot: function(slot) {
@@ -144,11 +168,11 @@ window.ITEM_ENGINE = {
     bindEvents: function() {
         const self = this;
 
-        // 모달 드래그 이동 연결
+        // 🖐️ 모달 윗줄 전용 구획 드래그 이동 영역 연결 (#item-modal-drag-handle)
         const itemPopup = document.getElementById('item-popup');
-        const itemPopupHeader = itemPopup ? itemPopup.querySelector('h3') : null;
-        if (itemPopup && itemPopupHeader) {
-            makeModalDraggable(itemPopup, itemPopupHeader);
+        const itemPopupDragZone = document.getElementById('item-modal-drag-handle');
+        if (itemPopup && itemPopupDragZone) {
+            makeModalDraggable(itemPopup, itemPopupDragZone);
         }
         document.querySelectorAll('#item-container .item-slot').forEach(slot => {
             slot.addEventListener('click', (event) => {
@@ -166,12 +190,14 @@ window.ITEM_ENGINE = {
         }
 
         const closeItem = document.getElementById('close-item-popup');
-        if (closeItem) {
-            closeItem.addEventListener('click', () => {
-                document.getElementById('item-popup').classList.add('hidden');
-                document.querySelectorAll('#item-container .item-slot').forEach(s => s.classList.remove('active-slot'));
-            });
-        }
+        const closeItemTop = document.getElementById('close-item-popup-top');
+        const closeHandler = () => {
+            document.getElementById('item-popup').classList.add('hidden');
+            document.querySelectorAll('#item-container .item-slot').forEach(s => s.classList.remove('active-slot'));
+            isSelectingForPreset = false;
+        };
+        if (closeItem) closeItem.addEventListener('click', closeHandler);
+        if (closeItemTop) closeItemTop.addEventListener('click', closeHandler);
 
         // 🔍 검색창 실시간 입력 이벤트 핸들러
         const searchInput = document.getElementById('item-search-input');
@@ -196,7 +222,52 @@ window.ITEM_ENGINE = {
             modalAddTreeBtn.addEventListener('click', () => self.updateSelectedSector());
         }
 
-        // 🎯 PNG 템트리 내보내기 (투명 배경)
+        // 📦 프리셋 관리 버튼 바인딩
+        const btnCreatePreset = document.getElementById('btn-create-preset');
+        if (btnCreatePreset) {
+            btnCreatePreset.addEventListener('click', () => self.openPresetModal());
+        }
+
+        const btnImportCode = document.getElementById('btn-import-preset-code');
+        if (btnImportCode) {
+            btnImportCode.addEventListener('click', () => self.importPresetCode());
+        }
+
+        // 💾 TXT 전체 내보내기 & 📂 TXT 파일 불러오기 버튼 연결
+        const btnExportAllTxt = document.getElementById('btn-export-all-presets-txt');
+        if (btnExportAllTxt) {
+            btnExportAllTxt.addEventListener('click', () => self.exportAllPresetsTxt());
+        }
+
+        const btnImportTxtFile = document.getElementById('btn-import-presets-txt-file');
+        const presetFileInput = document.getElementById('preset-file-input');
+        if (btnImportTxtFile && presetFileInput) {
+            btnImportTxtFile.addEventListener('click', () => presetFileInput.click());
+            presetFileInput.addEventListener('change', (e) => {
+                if (e.target.files && e.target.files.length > 0) {
+                    self.importPresetsFromTxtFile(e.target.files[0]);
+                    e.target.value = ''; // 재선택 가능하도록 리셋
+                }
+            });
+        }
+
+        const btnClosePresetModal = document.getElementById('close-preset-modal');
+        const btnCancelPreset = document.getElementById('btn-cancel-preset');
+        if (btnClosePresetModal) btnClosePresetModal.addEventListener('click', () => self.closePresetModal());
+        if (btnCancelPreset) btnCancelPreset.addEventListener('click', () => self.closePresetModal());
+
+        const btnSavePreset = document.getElementById('btn-save-preset');
+        if (btnSavePreset) btnSavePreset.addEventListener('click', () => self.saveEditingPreset());
+
+        const btnAddItemToPreset = document.getElementById('btn-add-item-to-preset');
+        if (btnAddItemToPreset) {
+            btnAddItemToPreset.addEventListener('click', () => {
+                isSelectingForPreset = true;
+                self.displayItemsByCategory('All');
+            });
+        }
+
+        // 🎯 PNG/JPG 템트리 내보내기
         const btnExportPng = document.getElementById('export-png-button');
         if (btnExportPng) {
             btnExportPng.addEventListener('click', () => {
@@ -232,11 +303,415 @@ window.ITEM_ENGINE = {
         }
     },
 
+    // 📦 프리셋 저장소 로드/저장/관리 함수들
+    loadPresetsFromStorage: function() {
+        try {
+            const saved = localStorage.getItem('lol_item_presets');
+            if (saved) {
+                presets = JSON.parse(saved);
+            } else {
+                presets = [
+                    {
+                        id: 'preset_sample_1',
+                        name: '🛡️ 브루저 핵심 아이템 세트',
+                        items: ['3078', '3071', '6333', '3053', '3161', '3074']
+                    }
+                ];
+                this.savePresetsToStorage();
+            }
+        } catch (e) {
+            presets = [];
+        }
+        if (presets.length > 0 && !activePresetId) {
+            activePresetId = presets[0].id;
+        }
+        this.renderPresetCards();
+    },
+
+    savePresetsToStorage: function() {
+        localStorage.setItem('lol_item_presets', JSON.stringify(presets));
+    },
+
+    renderPresetCards: function() {
+        const container = document.getElementById('preset-list-container');
+        if (!container) return;
+        container.innerHTML = '';
+        const self = this;
+
+        if (presets.length === 0) {
+            const emptyMsg = document.createElement('div');
+            emptyMsg.style.gridColumn = '1 / -1';
+            emptyMsg.style.color = '#8b9ab5';
+            emptyMsg.style.textAlign = 'center';
+            emptyMsg.style.padding = '20px 0';
+            emptyMsg.textContent = '등록된 프리셋이 없습니다. [➕ 새 프리셋 생성] 버튼을 눌러보세요.';
+            container.appendChild(emptyMsg);
+            return;
+        }
+
+        presets.forEach(p => {
+            const card = document.createElement('div');
+            card.classList.add('preset-card');
+            if (p.id === activePresetId) {
+                card.classList.add('active-preset');
+            }
+
+            const header = document.createElement('div');
+            header.classList.add('preset-card-header');
+
+            const title = document.createElement('div');
+            title.classList.add('preset-card-title');
+            title.textContent = p.name || '무제 프리셋';
+
+            const activeBadge = document.createElement('span');
+            if (p.id === activePresetId) {
+                activeBadge.style.fontSize = '0.72rem';
+                activeBadge.style.background = 'var(--gold-primary)';
+                activeBadge.style.color = '#000';
+                activeBadge.style.padding = '2px 8px';
+                activeBadge.style.borderRadius = '10px';
+                activeBadge.style.fontWeight = 'bold';
+                activeBadge.textContent = '선택 적용됨';
+            }
+            header.appendChild(title);
+            if (p.id === activePresetId) header.appendChild(activeBadge);
+
+            const itemsPreview = document.createElement('div');
+            itemsPreview.classList.add('preset-items-preview');
+
+            if (p.items && p.items.length > 0) {
+                p.items.forEach(itemId => {
+                    const img = document.createElement('img');
+                    img.src = `https://ddragon.leagueoflegends.com/cdn/${itemVersion}/img/item/${itemId}.png`;
+                    const itemData = itemMap[itemId];
+                    if (itemData) img.title = itemData.name;
+                    itemsPreview.appendChild(img);
+                });
+            } else {
+                itemsPreview.innerHTML = '<span style="font-size: 0.8rem; color: #8b9ab5;">(아이템 없음)</span>';
+            }
+
+            const actions = document.createElement('div');
+            actions.classList.add('preset-card-actions');
+
+            const btnApply = document.createElement('button');
+            btnApply.type = 'button';
+            btnApply.classList.add('btn', 'btn-primary');
+            btnApply.style.padding = '4px 10px';
+            btnApply.style.fontSize = '0.78rem';
+            btnApply.textContent = (p.id === activePresetId) ? '✓ 사용 중' : '불러오기/적용';
+            btnApply.addEventListener('click', () => {
+                activePresetId = p.id;
+                self.renderPresetCards();
+            });
+
+            const btnExportCode = document.createElement('button');
+            btnExportCode.type = 'button';
+            btnExportCode.classList.add('btn', 'btn-secondary');
+            btnExportCode.style.padding = '4px 10px';
+            btnExportCode.style.fontSize = '0.78rem';
+            btnExportCode.textContent = '📤 코드 내보내기';
+            btnExportCode.title = '다른 PC로 전달 가능한 Base64 코드로 내보내기';
+            btnExportCode.addEventListener('click', () => self.exportPresetCode(p));
+
+            const btnEdit = document.createElement('button');
+            btnEdit.type = 'button';
+            btnEdit.classList.add('btn', 'btn-secondary');
+            btnEdit.style.padding = '4px 10px';
+            btnEdit.style.fontSize = '0.78rem';
+            btnEdit.textContent = '✏️ 수정';
+            btnEdit.addEventListener('click', () => self.openPresetModal(p));
+
+            const btnDel = document.createElement('button');
+            btnDel.type = 'button';
+            btnDel.classList.add('btn', 'btn-danger');
+            btnDel.style.padding = '4px 10px';
+            btnDel.style.fontSize = '0.78rem';
+            btnDel.textContent = '🗑️';
+            btnDel.addEventListener('click', () => {
+                if (confirm(`'${p.name}' 프리셋을 삭제하시겠습니까?`)) {
+                    presets = presets.filter(item => item.id !== p.id);
+                    if (activePresetId === p.id) {
+                        activePresetId = presets.length > 0 ? presets[0].id : null;
+                    }
+                    self.savePresetsToStorage();
+                    self.renderPresetCards();
+                }
+            });
+
+            actions.appendChild(btnApply);
+            actions.appendChild(btnExportCode);
+            actions.appendChild(btnEdit);
+            actions.appendChild(btnDel);
+
+            card.appendChild(header);
+            card.appendChild(itemsPreview);
+            card.appendChild(actions);
+
+            container.appendChild(card);
+        });
+    },
+
+    // 📤 단일 프리셋 Base64 코드 생성 내보내기
+    exportPresetCode: function(preset) {
+        if (!preset) return;
+        const data = {
+            name: preset.name,
+            items: preset.items || []
+        };
+        const jsonStr = JSON.stringify(data);
+        const code = toBase64(jsonStr);
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(code).then(() => {
+                alert(`'${preset.name}' 프리셋 코드가 클립보드에 복사되었습니다!\n\n다른 PC나 브라우저에서 [📥 코드 불러오기] 버튼을 눌러 붙여넣으세요.\n\n코드: ${code.substring(0, 40)}...`);
+            }).catch(() => {
+                prompt(`아래 프리셋 복사 코드를 복사(Ctrl+C)하세요:`, code);
+            });
+        } else {
+            prompt(`아래 프리셋 복사 코드를 복사(Ctrl+C)하세요:`, code);
+        }
+    },
+
+    // 📥 Base64 코드로 프리셋 불러오기
+    importPresetCode: function() {
+        const inputCode = prompt('다른 PC에서 내보낸 프리셋 Base64 코드를 붙여넣으세요:');
+        if (!inputCode || !inputCode.trim()) return;
+
+        const jsonStr = fromBase64(inputCode);
+        if (!jsonStr) {
+            alert('올바르지 않은 프리셋 코드입니다.');
+            return;
+        }
+
+        try {
+            const data = JSON.parse(jsonStr);
+            if (!data || !data.name || !Array.isArray(data.items)) {
+                throw new Error('Invalid format');
+            }
+
+            const newPreset = {
+                id: 'preset_' + Date.now(),
+                name: data.name,
+                items: data.items
+            };
+
+            presets.push(newPreset);
+            activePresetId = newPreset.id;
+            this.savePresetsToStorage();
+            this.renderPresetCards();
+            alert(`'${newPreset.name}' 프리셋을 성공적으로 불러왔습니다!`);
+        } catch (e) {
+            alert('프리셋 데이터를 파싱할 수 없습니다. 코드를 다시 확인해주세요.');
+        }
+    },
+
+    // 💾 모든 프리셋 목록 통째로 TXT 파일로 다운로드 내보내기
+    exportAllPresetsTxt: function() {
+        if (!presets || presets.length === 0) {
+            alert('저장된 프리셋이 없습니다.');
+            return;
+        }
+
+        const backupData = {
+            version: '1.0',
+            exportedAt: new Date().toLocaleString(),
+            count: presets.length,
+            presets: presets
+        };
+
+        const jsonString = JSON.stringify(backupData, null, 2);
+        const blob = new Blob([jsonString], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement('a');
+        a.href = url;
+        const now = new Date();
+        const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+        a.download = `lol_presets_all_backup_${dateStr}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    },
+
+    // 📂 TXT 파일로 전체 프리셋 불러오기
+    importPresetsFromTxtFile: function(file) {
+        if (!file) return;
+
+        const reader = new FileReader();
+        const self = this;
+
+        reader.onload = function(e) {
+            try {
+                const content = e.target.result;
+                if (!content || !content.trim()) {
+                    alert('파일이 비어있습니다.');
+                    return;
+                }
+
+                let parsed;
+                try {
+                    parsed = JSON.parse(content);
+                } catch (err) {
+                    const decoded = fromBase64(content);
+                    if (decoded) parsed = JSON.parse(decoded);
+                }
+
+                let importedList = [];
+                if (parsed) {
+                    if (Array.isArray(parsed)) {
+                        importedList = parsed;
+                    } else if (parsed.presets && Array.isArray(parsed.presets)) {
+                        importedList = parsed.presets;
+                    } else if (parsed.name && Array.isArray(parsed.items)) {
+                        importedList = [parsed];
+                    }
+                }
+
+                if (importedList.length === 0) {
+                    alert('유효한 프리셋 데이터를 찾을 수 없습니다.');
+                    return;
+                }
+
+                const appendMode = confirm(`총 ${importedList.length}개의 프리셋을 발견했습니다.\n\n[확인]: 기존 프리셋에 추가하기 (추천)\n[취소]: 기존 목록을 지우고 파일 내용으로 완전히 덮어쓰기`);
+
+                if (appendMode) {
+                    importedList.forEach(item => {
+                        presets.push({
+                            id: 'preset_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                            name: item.name || '불러온 프리셋',
+                            items: item.items || []
+                        });
+                    });
+                } else {
+                    presets = importedList.map(item => ({
+                        id: 'preset_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+                        name: item.name || '불러온 프리셋',
+                        items: item.items || []
+                    }));
+                }
+
+                if (presets.length > 0) {
+                    activePresetId = presets[0].id;
+                }
+
+                self.savePresetsToStorage();
+                self.renderPresetCards();
+                alert(`프리셋 ${importedList.length}개가 정상적으로 동기화/불러와졌습니다!`);
+            } catch (err) {
+                console.error(err);
+                alert('파일을 불러오는 도중 오류가 발생했습니다. TXT 파일 형식을 확인해주세요.');
+            }
+        };
+
+        reader.readAsText(file, 'UTF-8');
+    },
+
+    openPresetModal: function(presetToEdit = null) {
+        const modal = document.getElementById('preset-modal');
+        const titleEl = document.getElementById('preset-modal-title');
+        const nameInput = document.getElementById('preset-name-input');
+        if (!modal || !nameInput) return;
+
+        if (presetToEdit) {
+            editingPreset = JSON.parse(JSON.stringify(presetToEdit));
+            if (titleEl) titleEl.textContent = '✏️ 프리셋 수정';
+            nameInput.value = editingPreset.name;
+        } else {
+            editingPreset = {
+                id: 'preset_' + Date.now(),
+                name: '',
+                items: []
+            };
+            if (titleEl) titleEl.textContent = '📦 새 프리셋 생성';
+            nameInput.value = '';
+        }
+
+        this.renderEditingPresetItems();
+        modal.classList.remove('hidden');
+    },
+
+    closePresetModal: function() {
+        const modal = document.getElementById('preset-modal');
+        if (modal) modal.classList.add('hidden');
+        editingPreset = null;
+        isSelectingForPreset = false;
+    },
+
+    renderEditingPresetItems: function() {
+        const container = document.getElementById('preset-item-collection');
+        const countEl = document.getElementById('preset-item-count');
+        if (!container || !editingPreset) return;
+
+        container.innerHTML = '';
+        if (countEl) countEl.textContent = editingPreset.items.length;
+
+        if (editingPreset.items.length === 0) {
+            container.innerHTML = '<span style="font-size: 0.82rem; color: #8b9ab5; margin: 0 auto;">아이템이 없습니다. 위 [➕ 아이템 검색 추가] 버튼을 눌러 담으세요.</span>';
+            return;
+        }
+
+        const self = this;
+        editingPreset.items.forEach((itemId, idx) => {
+            const chip = document.createElement('div');
+            chip.classList.add('preset-chip-item');
+
+            const img = document.createElement('img');
+            img.src = `https://ddragon.leagueoflegends.com/cdn/${itemVersion}/img/item/${itemId}.png`;
+            const itemData = itemMap[itemId];
+            if (itemData) img.title = itemData.name;
+
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.classList.add('chip-remove-btn');
+            removeBtn.textContent = '✕';
+            removeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                editingPreset.items.splice(idx, 1);
+                self.renderEditingPresetItems();
+            });
+
+            chip.appendChild(img);
+            chip.appendChild(removeBtn);
+            container.appendChild(chip);
+        });
+    },
+
+    saveEditingPreset: function() {
+        const nameInput = document.getElementById('preset-name-input');
+        if (!editingPreset || !nameInput) return;
+
+        const name = nameInput.value.trim();
+        if (!name) {
+            alert('프리셋 이름을 입력해주세요.');
+            return;
+        }
+
+        editingPreset.name = name;
+
+        const existingIndex = presets.findIndex(p => p.id === editingPreset.id);
+        if (existingIndex !== -1) {
+            presets[existingIndex] = editingPreset;
+        } else {
+            presets.push(editingPreset);
+        }
+
+        activePresetId = editingPreset.id;
+        this.savePresetsToStorage();
+        this.renderPresetCards();
+        this.closePresetModal();
+    },
+
     handleSlotClick: function() {
         if (!selectedItemSlot || !itemMap) return;
         const isWard = selectedItemSlot.classList.contains('ward-slot');
         const defaultCategory = isWard ? 'Trinket' : 'All';
         this.displayItemsByCategory(defaultCategory);
+    },
+
+    showCategoryPopup: function(categories) {
+        // 더 이상 사용되지 않는 카테고리 중간 팝업
     },
 
     displayItemsByCategory: function(category) {
@@ -304,14 +779,53 @@ window.ITEM_ENGINE = {
         const hasQuery = query && query.trim().length > 0;
         const isAllAndNoQuery = (category === 'All' && !hasQuery);
 
-        // 검색어가 없고 '전체' 탭인 경우, 아래에 모든 아이템이 쏟아져 나오지 않고 깔끔하게 안내
+        // 📦 사용자가 활성화한 프리셋이 있는 경우 '전체' 탭 상단에 프리셋 추천 구역 노출
+        const activePreset = presets.find(p => p.id === activePresetId);
+        if (activePreset && activePreset.items && activePreset.items.length > 0 && !hasQuery && !isSelectingForPreset) {
+            const recommendSec = document.createElement('div');
+            recommendSec.classList.add('preset-recommend-section');
+            recommendSec.style.gridColumn = '1 / -1';
+
+            const recTitle = document.createElement('div');
+            recTitle.classList.add('preset-recommend-title');
+            recTitle.innerHTML = `📦 <span>[${activePreset.name}] 프리셋 아이템 목록</span>`;
+
+            const recGrid = document.createElement('div');
+            recGrid.classList.add('preset-recommend-grid');
+
+            activePreset.items.forEach(itemId => {
+                const item = itemMap[itemId];
+                if (item) {
+                    const itemDiv = document.createElement('div');
+                    itemDiv.classList.add('item-grid-item');
+
+                    const img = document.createElement('img');
+                    img.src = `https://ddragon.leagueoflegends.com/cdn/${itemVersion}/img/item/${itemId}.png`;
+                    img.alt = item.name;
+                    img.title = `[프리셋] ${item.name}`;
+
+                    itemDiv.appendChild(img);
+                    recGrid.appendChild(itemDiv);
+
+                    itemDiv.addEventListener('click', () => {
+                        self.selectItem(itemId, item.name);
+                    });
+                }
+            });
+
+            recommendSec.appendChild(recTitle);
+            recommendSec.appendChild(recGrid);
+            itemsList.appendChild(recommendSec);
+        }
+
+        // 검색어가 없고 '전체' 탭인 경우 안내 메시지
         if (isAllAndNoQuery) {
             const infoMsg = document.createElement('div');
             infoMsg.style.gridColumn = '1 / -1';
             infoMsg.style.textAlign = 'center';
             infoMsg.style.color = '#a0abbd';
-            infoMsg.style.padding = '32px 0';
-            infoMsg.style.fontSize = '0.95rem';
+            infoMsg.style.padding = '24px 0';
+            infoMsg.style.fontSize = '0.9rem';
             infoMsg.innerHTML = `💡 <strong>초성(예: ㅁㅈㅇ, 몰왕) 또는 이름을 검색</strong>하거나<br>상단 <strong>카테고리(공격력, 주문력 등)</strong>를 선택하세요.`;
             itemsList.appendChild(infoMsg);
             return;
@@ -339,7 +853,11 @@ window.ITEM_ENGINE = {
                     itemsList.appendChild(itemDiv);
 
                     itemDiv.addEventListener('click', () => {
-                        self.selectItem(id, item.name);
+                        if (isSelectingForPreset) {
+                            self.addItemToEditingPreset(id);
+                        } else {
+                            self.selectItem(id, item.name);
+                        }
                     });
                 }
             }
@@ -354,6 +872,14 @@ window.ITEM_ENGINE = {
             emptyMsg.style.fontSize = '0.9rem';
             emptyMsg.textContent = `'${query}' 검색 결과가 없습니다.`;
             itemsList.appendChild(emptyMsg);
+        }
+    },
+
+    addItemToEditingPreset: function(itemId) {
+        if (!editingPreset) return;
+        if (!editingPreset.items.includes(itemId)) {
+            editingPreset.items.push(itemId);
+            this.renderEditingPresetItems();
         }
     },
 
@@ -466,7 +992,6 @@ window.ITEM_ENGINE = {
                 if (activeSectorEl) activeSectorEl.style.boxShadow = '';
             }, 300);
         } else {
-            // 선택된 섹터가 없으면 신규 추가
             this.captureSlots();
         }
     },
