@@ -155,7 +155,131 @@ window.ITEM_ENGINE = {
 
         this.bindEvents();
         this.loadPresetsFromStorage();
+        this.checkAndApplyImportedItems();
     },
+
+    checkAndApplyImportedItems: function() {
+        try {
+            const saved = localStorage.getItem('gudo_imported_items');
+            if (!saved) return;
+            const imported = JSON.parse(saved);
+            const mainItems = imported.mainItems || [];
+            const wardItem = imported.wardItem || null;
+
+            // 1. 메인 에디터 슬롯 초기화 및 1~3, 4(와드), 5~7 슬롯 매핑
+            this.clearSlots();
+
+            mainItems.slice(0, 3).forEach((item, idx) => {
+                const slot = document.querySelector(`#item-container .item-slot[data-slot="${idx + 1}"]`);
+                if (slot && item) {
+                    slot.innerHTML = `<img src="${item.src}" alt="${item.name}" title="${item.name}" data-id="${item.id}" />`;
+                }
+            });
+
+            if (wardItem) {
+                const wardSlot = document.querySelector('#item-container .item-slot[data-slot="4"]');
+                if (wardSlot) {
+                    wardSlot.innerHTML = `<img src="${wardItem.src}" alt="${wardItem.name}" title="${wardItem.name}" data-id="${wardItem.id}" />`;
+                }
+            }
+
+            mainItems.slice(3, 6).forEach((item, idx) => {
+                const slot = document.querySelector(`#item-container .item-slot[data-slot="${idx + 5}"]`);
+                if (slot && item) {
+                    slot.innerHTML = `<img src="${item.src}" alt="${item.name}" title="${item.name}" data-id="${item.id}" />`;
+                }
+            });
+
+            // 2. 1단계 ~ N단계 (시간 순서 누적 템트리 라인) 섹터들 생성
+            const captureContainer = document.getElementById('capture-container');
+            if (captureContainer) {
+                let rowContainer = captureContainer.querySelector('.capture-row');
+                if (!rowContainer) {
+                    rowContainer = document.createElement('div');
+                    rowContainer.classList.add('capture-row');
+                    captureContainer.appendChild(rowContainer);
+                } else {
+                    rowContainer.innerHTML = ''; // 기존 섹터 초기화
+                }
+
+                // 1개부터 mainItems.length 까지 누적 단계 생성
+                for (let step = 1; step <= mainItems.length; step++) {
+                    const currentStageItems = mainItems.slice(0, step);
+
+                    if (rowContainer.children.length > 0) {
+                        const arrow = document.createElement('div');
+                        arrow.classList.add('arrow-connector');
+                        arrow.textContent = '➔';
+                        rowContainer.appendChild(arrow);
+                    }
+
+                    const captureSector = document.createElement('div');
+                    captureSector.classList.add('capture-sector');
+                    captureSector.title = `${step}단계 아이템 빌드`;
+
+                    const btnDelete = document.createElement('button');
+                    btnDelete.type = 'button';
+                    btnDelete.classList.add('btn-sector-mini-delete');
+                    btnDelete.setAttribute('data-html2canvas-ignore', 'true');
+                    btnDelete.textContent = '✖';
+                    captureSector.appendChild(btnDelete);
+
+                    let gridContainer = document.createElement('div');
+                    gridContainer.classList.add('mini-grid-container');
+
+                    // 슬롯 1~3, 4(와드), 5~7에 맞게 mini-slot 배치
+                    for (let sIdx = 1; sIdx <= 7; sIdx++) {
+                        const capturedSlot = document.createElement('div');
+                        capturedSlot.classList.add('mini-slot');
+                        if (sIdx === 4) {
+                            capturedSlot.classList.add('ward-slot');
+                            if (wardItem) {
+                                const img = document.createElement('img');
+                                img.src = wardItem.src;
+                                img.alt = wardItem.name;
+                                capturedSlot.appendChild(img);
+                            }
+                        } else {
+                            const mainIdx = sIdx < 4 ? sIdx - 1 : sIdx - 2;
+                            if (mainIdx < currentStageItems.length) {
+                                const it = currentStageItems[mainIdx];
+                                const img = document.createElement('img');
+                                img.src = it.src;
+                                img.alt = it.name;
+                                capturedSlot.appendChild(img);
+                            }
+                        }
+                        gridContainer.appendChild(capturedSlot);
+                    }
+
+                    captureSector.appendChild(gridContainer);
+
+                    captureSector.addEventListener('click', () => {
+                        this.setActiveSector(captureSector);
+                        this.loadSectorToMainSlots(captureSector);
+                    });
+
+                    btnDelete.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        let prev = captureSector.previousElementSibling;
+                        let next = captureSector.nextElementSibling;
+                        if (prev && prev.classList.contains('arrow-connector')) prev.remove();
+                        else if (next && next.classList.contains('arrow-connector')) next.remove();
+                        captureSector.remove();
+                    });
+
+                    rowContainer.appendChild(captureSector);
+                }
+            }
+
+            localStorage.removeItem('gudo_imported_items');
+            console.log("⚔️ FOW 파싱 1~6단계 누적 아이템 빌드 트리 생성 완료!");
+        } catch (e) {
+            console.warn('Imported items application error:', e);
+        }
+    },
+
+
 
     setActiveSlot: function(slot) {
         document.querySelectorAll('#item-container .item-slot').forEach(s => s.classList.remove('active-slot'));

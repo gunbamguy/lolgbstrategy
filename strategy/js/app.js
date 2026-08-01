@@ -2568,6 +2568,28 @@ function renderScreenshots() {
         itemEl.appendChild(btnGroup);
         container.appendChild(itemEl);
     });
+function checkAndApplyImportedChampions() {
+    try {
+        const saved = localStorage.getItem('gudo_imported_champions');
+        if (!saved) return;
+        const imported = JSON.parse(saved);
+        const teamChamps = imported.teamChamps || [];
+
+        if (teamChamps.length > 0) {
+            bluePreset = teamChamps.slice(0, 5).map(c => c.name);
+            redPreset = teamChamps.slice(5, 10).map(c => c.name);
+
+            if (typeof renderPresetLists === 'function') {
+                renderPresetLists();
+            }
+            console.log("⚡ FOW 파싱 10명 챔피언 라인업 전략 보드 세팅 완료:", bluePreset, redPreset);
+        }
+        localStorage.removeItem('gudo_imported_champions');
+    } catch (e) {
+        console.warn('Imported strategy champions application error:', e);
+    }
 }
 
 init();
+setTimeout(checkAndApplyImportedChampions, 200);
+

@@ -163,6 +163,7 @@ function selectMainRune(runeData, containerId) {
             img.src = `https://ddragon.leagueoflegends.com/cdn/img/${rune.icon}`;
             img.alt = rune.name;
             img.title = rune.name;
+            img.dataset.id = rune.id;
             img.crossOrigin = "anonymous";
 
             img.onclick = () => {
@@ -204,21 +205,40 @@ function selectSubRune(runeData, containerId) {
             img.src = `https://ddragon.leagueoflegends.com/cdn/img/${rune.icon}`;
             img.alt = rune.name;
             img.title = rune.name;
+            img.dataset.id = rune.id;
             img.crossOrigin = "anonymous";
 
             img.onclick = () => {
+                const currentSelectedInSlot = slotDiv.querySelector('img.selected');
+
                 if (img.classList.contains('selected')) {
+                    // 클릭한 룬이 이미 선택된 룬이면 해제 (토글 OFF)
                     img.classList.remove('selected');
                     appState.selectedSubRunes = appState.selectedSubRunes.filter(i => i !== img);
                     appState.selectedSubRuneCount--;
                 } else {
-                    if (appState.selectedSubRuneCount >= 2) {
-                        alert('보조 룬은 2개까지만 선택할 수 있습니다.');
-                        return;
+                    if (currentSelectedInSlot) {
+                        // 같은 슬롯 내 다른 룬이 선택되어 있었던 경우 -> 슬롯 내 교체 (카운트 유지)
+                        currentSelectedInSlot.classList.remove('selected');
+                        appState.selectedSubRunes = appState.selectedSubRunes.filter(i => i !== currentSelectedInSlot);
+                        img.classList.add('selected');
+                        appState.selectedSubRunes.push(img);
+                    } else {
+                        // 슬롯에 기존 선택된 룬이 없었던 경우
+                        if (appState.selectedSubRuneCount >= 2) {
+                            // 이미 2개가 채워져 있으면 가장 오래전에 선택된 룬을 밀어내고 스마트 교체 (3번 슬롯도 자유롭게 선택 가능)
+                            const oldestSelected = appState.selectedSubRunes.shift();
+                            if (oldestSelected) {
+                                oldestSelected.classList.remove('selected');
+                            }
+                            img.classList.add('selected');
+                            appState.selectedSubRunes.push(img);
+                        } else {
+                            img.classList.add('selected');
+                            appState.selectedSubRunes.push(img);
+                            appState.selectedSubRuneCount++;
+                        }
                     }
-                    img.classList.add('selected');
-                    appState.selectedSubRunes.push(img);
-                    appState.selectedSubRuneCount++;
                 }
                 updateSubRuneDimming();
                 window.APP_STORAGE.saveStateToLocalStorage(appState);
@@ -534,6 +554,134 @@ function initUIEvents() {
     document.getElementById('btnReset').addEventListener('click', resetAllRunes);
 }
 
+// FOW 전적 파싱 룬 자동 세팅 수신함수
+// [Fail 11~13 대응] DOM .click() 비동기 엇갈림 근본 차단
+// 방법: 주 빌드는 .click() + data-id 정확 매칭, 보조 빌드는 주 빌드 완전 정착 후 실행
+function checkAndApplyImportedRune(runesData) {
+    try {
+        const savedImport = localStorage.getItem('gudo_imported_rune');
+        if (!savedImport) return;
+
+        const imported = JSON.parse(savedImport);
+        const targetMainId = parseInt(imported.mainRuneId, 10);
+        const targetSubId = parseInt(imported.subTreeId, 10);
+
+        if (!targetMainId) return;
+
+        console.log('[FOW Import] 시작 - mainRuneId:', targetMainId, 'subTreeId:', targetSubId);
+
+        // 유틸: ms만큼 지연
+        function delay(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        // 1. 주 룬이 속한 계열(tree) 인덱스 탐색
+        let mainTreeIdx = -1;
+        runesData.forEach((tree, idx) => {
+            tree.slots.forEach(slot => {
+                if (slot.runes.some(r => r.id === targetMainId)) {
+                    mainTreeIdx = idx;
+                }
+            });
+        });
+
+        // 2. 보조 계열 인덱스 탐색
+        let subTreeIdx = runesData.findIndex(t => t.id === targetSubId);
+
+        console.log('[FOW Import] mainTreeIdx:', mainTreeIdx, 'subTreeIdx:', subTreeIdx);
+
+        // 순차 실행 체인
+        (async function applyRuneSequence() {
+            // === STEP 1: 주 빌드 계열 클릭 ===
+            if (mainTreeIdx !== -1) {
+                const mainImgs = document.querySelectorAll('#mainRuneImages img');
+                console.log('[FOW Import] STEP1 주계열 img 개수:', mainImgs.length, '클릭 인덱스:', mainTreeIdx);
+                if (mainImgs[mainTreeIdx]) {
+                    mainImgs[mainTreeIdx].click();
+                }
+                await delay(200);
+
+                // === STEP 2: 주 빌드 키스톤 data-id 정확 선택 ===
+                const targetRuneImg = document.querySelector(`#mainSecondaryRuneImages img[data-id="${targetMainId}"]`);
+                console.log('[FOW Import] STEP2 키스톤 찾기 data-id=' + targetMainId + ':', targetRuneImg ? '발견' : '미발견');
+                if (targetRuneImg) {
+                    targetRuneImg.click();
+                }
+                await delay(100);
+
+                // === STEP 3: 주 빌드 나머지 슬롯 첫번째 룬 자동 채우기 ===
+                const mainSlots = document.querySelectorAll('#mainSecondaryRuneImages .rune-slot');
+                mainSlots.forEach((slot, i) => {
+                    if (!slot.querySelector('img.selected')) {
+                        const firstImg = slot.querySelector('img');
+                        if (firstImg) {
+                            console.log('[FOW Import] STEP3 주빌드 슬롯', i, '자동 채움');
+                            firstImg.click();
+                        }
+                    }
+                });
+                await delay(200);
+            }
+
+            // === STEP 4: 보조 빌드 계열 선택 ===
+            if (subTreeIdx !== -1 && subTreeIdx !== mainTreeIdx) {
+                const subImgs = document.querySelectorAll('#subRuneImages img');
+                console.log('[FOW Import] STEP4 보조계열 img 개수:', subImgs.length, '클릭 인덱스:', subTreeIdx);
+                if (subImgs[subTreeIdx]) {
+                    subImgs[subTreeIdx].click();
+                }
+                await delay(300); // 보조 빌드 UI 렌더링 완전 대기 (넉넉하게)
+
+                // === STEP 5: 보조 빌드 룬 2개 자동 선택 ===
+                const subSlots = document.querySelectorAll('#subSecondaryRuneImages .rune-slot');
+                console.log('[FOW Import] STEP5 보조 슬롯 개수:', subSlots.length);
+                // 영감(8300) 계열인 경우 대표 조합인 2번 슬롯(신발/외상) + 3번 슬롯(우주적 통찰 등) 선택
+                const slotsToPick = (targetSubId === 8300 && subSlots.length >= 3) ? [1, 2] : [0, 1];
+                let subSelectedCount = 0;
+
+                for (const slotIdx of slotsToPick) {
+                    if (subSlots[slotIdx]) {
+                        const img = subSlots[slotIdx].querySelector('img');
+                        if (img) {
+                            console.log('[FOW Import] STEP5 보조룬 슬롯', slotIdx, '클릭:', img.alt);
+                            img.click();
+                            subSelectedCount++;
+                            await delay(100);
+                        }
+                    }
+                }
+                console.log('[FOW Import] STEP5 보조룬 선택 완료 count:', subSelectedCount);
+                await delay(100);
+            } else {
+                console.warn('[FOW Import] 보조 계열 건너뜀 - subTreeIdx:', subTreeIdx, 'mainTreeIdx:', mainTreeIdx);
+            }
+
+            // === STEP 6: adr 능력치 파편 3개 선택 ===
+            ['runeShardSlot1', 'runeShardSlot2', 'runeShardSlot3'].forEach(slotId => {
+                const container = document.getElementById(slotId);
+                if (container && !container.querySelector('img.selected')) {
+                    const firstShard = container.querySelector('img');
+                    if (firstShard) firstShard.click();
+                }
+            });
+
+            // === STEP 7: 텍스트 라벨 설정 및 정리 ===
+            if (imported.mainChamp) {
+                const textInput = document.getElementById('textInput');
+                if (textInput) textInput.value = `${imported.mainChamp} FOW 룬 세팅`;
+            }
+
+            localStorage.removeItem('gudo_imported_rune');
+            window.APP_STORAGE.saveStateToLocalStorage(appState);
+            updateLivePreview();
+            console.log('[FOW Import] 완료 - 최종 appState subTreeIndex:', appState.selectedSubTreeIndex, 'subRunes:', appState.selectedSubRunes.length);
+        })();
+
+    } catch (e) {
+        console.warn('Imported rune application error:', e);
+    }
+}
+
 // 메인 초기화 실행
 document.addEventListener('DOMContentLoaded', async () => {
     initUIEvents();
@@ -554,20 +702,33 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderRuneTreeImages(runesData, 'subRuneImages', false);
         renderRuneShardImages(statModsData);
 
-        window.APP_STORAGE.restoreStateFromLocalStorage(runesData, appState, {
-            updateModalSliders: updateModalSliderValues,
-            updateUIPreview: () => {
-                const textInput = document.getElementById('textInput');
-                const textDisplay = document.getElementById('textDisplay');
-                const fontSizeRange = document.getElementById('fontSizeRange');
-                const textColor = document.getElementById('textColor');
-                if (textDisplay) {
-                    textDisplay.textContent = textInput.value;
-                    textDisplay.style.fontSize = `${fontSizeRange.value}px`;
-                    textDisplay.style.color = textColor.value;
+        // FOW 파싱 룬 import 데이터가 있으면 기존 상태 복원을 건너뜀
+        // [Fail 11~13 대응] restoreState의 setTimeout .click()이 import 세팅을 덮어쓰는 것을 방지
+        const hasImportedRune = localStorage.getItem('gudo_imported_rune');
+
+        if (!hasImportedRune) {
+            // 기존 저장 상태 복원 (import 데이터 없을 때만)
+            window.APP_STORAGE.restoreStateFromLocalStorage(runesData, appState, {
+                updateModalSliders: updateModalSliderValues,
+                updateUIPreview: () => {
+                    const textInput = document.getElementById('textInput');
+                    const textDisplay = document.getElementById('textDisplay');
+                    const fontSizeRange = document.getElementById('fontSizeRange');
+                    const textColor = document.getElementById('textColor');
+                    if (textDisplay) {
+                        textDisplay.textContent = textInput.value;
+                        textDisplay.style.fontSize = `${fontSizeRange.value}px`;
+                        textDisplay.style.color = textColor.value;
+                    }
                 }
-            }
-        });
+            });
+        } else {
+            // FOW import 시: 이전 저장 상태를 제거하고 새로 세팅
+            localStorage.removeItem(window.APP_CONFIG.LOCAL_STORAGE_KEY);
+        }
+
+        // FOW 파싱 룬 자동 세팅 수신 (import 데이터 있을 때만 실제 동작)
+        checkAndApplyImportedRune(runesData);
 
         updateLivePreview();
     } catch (error) {
@@ -579,3 +740,4 @@ document.addEventListener('DOMContentLoaded', async () => {
         switchAppMode('item');
     }
 });
+

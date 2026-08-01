@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>구도 (GUDO) - LoL 통합 도구 허브 | 룬 · 아이템 · 전략</title>
-    <meta name="description" content="리그 오브 레전드(LoL) 룬 빌드 익스포터, 아이템 템트리 익스포터, 전략 보드를 한곳에서. 군밤가이 제작.">
+    <meta name="description" content="리그 오브 레전드(LoL) FOW 전적 연동, 룬 빌드 익스포터, 아이템 템트리 익스포터, 전략 보드를 한곳에서. 군밤가이 제작.">
     <link rel="stylesheet" href="css/hub.css">
 </head>
 <body>
@@ -13,12 +13,36 @@
         <header class="hub-header">
             <div class="hub-badge">GUDO · 구도</div>
             <h1>LoL 통합 도구 허브</h1>
-            <p class="subtitle">리그 오브 레전드 룬 빌드, 아이템 템트리, 전략 보드를 한곳에서 사용하세요</p>
+            <p class="subtitle">FOW.LOL 전적을 한눈에 파악하고 룬, 아이템 빌드, 전략 보드로 바로 연동하세요</p>
         </header>
+
+        <!-- 📋 FOW 전적 파서 & 연동 컨트롤 박스 -->
+        <section class="fow-controls-section">
+            <div class="fow-btn-group">
+                <button class="fow-action-btn" id="btnPasteFow">
+                    📋 FOW 전적 HTML 붙여넣기
+                </button>
+            </div>
+            <span class="parsed-badge" id="parsedCountBadge">FOW 전적 소스코드를 붙여넣어 주세요</span>
+        </section>
+
+
+        <!-- 🌟 상세페이지 열린 판 / 선택 매치 대형 프리뷰 카드 -->
+        <section class="hero-preview-section" id="heroPreviewContainer">
+            <!-- mainHub.js 에서 파싱된 대형 프리뷰 카드가 여기에 렌더링됩니다 -->
+        </section>
+
+        <!-- 📊 60개 매칭 목록 그리드 -->
+        <div class="matches-section-title">
+            <span>📜 전적 매칭 목록 (클릭 시 메인 상세 전환)</span>
+        </div>
+        <div class="match-grid-container" id="matchGridContainer">
+            <!-- mainHub.js 에서 파싱된 매치 리스트 카드가 여기에 렌더링됩니다 -->
+        </div>
 
         <hr class="hub-divider">
 
-        <!-- 🃏 도구 카드 그리드 -->
+        <!-- 🃏 3대 핵심 도구 이동 카드 그리드 -->
         <div class="tools-grid">
 
             <!-- ⚡ 룬 익스포터 카드 -->
@@ -29,12 +53,12 @@
                 <p class="card-desc">
                     나만의 LoL 룬 페이지를 구성하고
                     고화질 PNG 이미지로 내보내세요.
-                    레이아웃, 로고, 캔버스 크기까지 커스터마이징 가능합니다.
+                    전적 파싱 룬 1:1 자동 연동 지원.
                 </p>
                 <div class="card-tags">
                     <span class="tag">룬 빌드</span>
+                    <span class="tag">Riot 룬 1:1</span>
                     <span class="tag">PNG 내보내기</span>
-                    <span class="tag">커스텀 로고</span>
                 </div>
                 <div class="card-cta">
                     시작하기 <span class="arrow">→</span>
@@ -48,12 +72,12 @@
                 <h2 class="card-title">아이템 익스포터</h2>
                 <p class="card-desc">
                     아이템 빌드 슬롯을 구성하고
-                    콤팩트 가로 템트리를 한눈에 확인.
-                    투명 배경 PNG로 깔끔하게 내보내세요.
+                    1~6단계 시간 누적 템트리를 한눈에 확인.
+                    전적 파싱 템트리 자동 배치.
                 </p>
                 <div class="card-tags">
-                    <span class="tag">아이템 빌드</span>
-                    <span class="tag">템트리</span>
+                    <span class="tag">1~6단계 빌드</span>
+                    <span class="tag">아이템 슬롯</span>
                     <span class="tag">투명 PNG</span>
                 </div>
                 <div class="card-cta">
@@ -69,12 +93,12 @@
                 <p class="card-desc">
                     소환사의 협곡 맵 위에 챔피언을 배치하고
                     펜·화살표로 전략을 그려보세요.
-                    타임라인 스텝 & OBS 방송 송출까지 지원합니다.
+                    전적 10명 챔피언 자동 배치 지원.
                 </p>
                 <div class="card-tags">
                     <span class="tag">전략 보드</span>
-                    <span class="tag">타임라인</span>
-                    <span class="tag">OBS 송출</span>
+                    <span class="tag">10명 챔피언</span>
+                    <span class="tag">OBS 방송용</span>
                 </div>
                 <div class="card-cta">
                     시작하기 <span class="arrow">→</span>
@@ -92,12 +116,28 @@
         </footer>
     </div>
 
-    <script>
-        // 아이템 익스포터 카드 클릭 시 해시 기반 자동 탭 전환
-        document.getElementById('cardItem').addEventListener('click', function(e) {
-            // 아이템 모드로 자동 전환하기 위해 hash를 #item으로 설정
-            // rune/index.html의 app.js에서 해시를 감지하여 아이템 탭으로 전환
-        });
-    </script>
+    <!-- 📋 FOW 전적 HTML 붙여넣기 모달 -->
+    <div class="modal-overlay hidden" id="modalFowPaste">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>📋 FOW 전적 HTML 소스 붙여넣기</h3>
+                <button class="close-btn" id="btnCloseModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size:0.85rem; color:#aaa; margin-bottom:10px;">
+                    FOW.LOL 사이트에서 <code>Ctrl + U</code> (페이지 소스 보기)를 눌러 전체 소스코드를 복사한 후 아래에 붙여넣어 주세요.
+                </p>
+                <textarea id="fowHtmlInput" class="fow-textarea" placeholder="<html... 소스코드를 이곳에 붙여넣으세요..."></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="btnCancelModal">취소</button>
+                <button class="btn-primary" id="btnSubmitFow">파싱 및 연동 시작</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 🚀 스크립트 연결 -->
+    <script src="js/fowParser.js"></script>
+    <script src="js/mainHub.js"></script>
 </body>
 </html>

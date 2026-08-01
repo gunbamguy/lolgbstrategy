@@ -343,3 +343,447 @@ body::before {
     border: none;
     opacity: 0.5;
 }
+
+/* =======================================================
+   📋 FOW 전적 파서 & 3대 도구 통합 연동 스타일
+   ======================================================= */
+.fow-controls-section {
+    width: 100%;
+    margin-bottom: 36px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+}
+
+.fow-btn-group {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.fow-action-btn {
+    padding: 12px 24px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    border-radius: 12px;
+    border: 1px solid var(--gold-primary);
+    background: linear-gradient(135deg, rgba(200, 155, 60, 0.25) 0%, rgba(12, 18, 30, 0.8) 100%);
+    color: var(--gold-light);
+    cursor: pointer;
+    transition: var(--transition);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.fow-action-btn:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, rgba(200, 155, 60, 0.45) 0%, rgba(20, 30, 50, 0.9) 100%);
+    box-shadow: 0 6px 20px rgba(200, 155, 60, 0.3);
+}
+
+.fow-action-btn.secondary {
+    border-color: var(--accent-blue);
+    background: linear-gradient(135deg, rgba(10, 200, 185, 0.2) 0%, rgba(12, 18, 30, 0.8) 100%);
+}
+
+.fow-action-btn.secondary:hover {
+    background: linear-gradient(135deg, rgba(10, 200, 185, 0.4) 0%, rgba(15, 35, 45, 0.9) 100%);
+    box-shadow: 0 6px 20px rgba(10, 200, 185, 0.3);
+}
+
+.parsed-badge {
+    font-size: 0.82rem;
+    color: var(--accent-blue);
+    background: rgba(10, 200, 185, 0.1);
+    padding: 4px 12px;
+    border-radius: 20px;
+    border: 1px solid rgba(10, 200, 185, 0.2);
+}
+
+/* 🌟 상세페이지 열린 판 / 선택된 매치 대형 프리뷰 카드 */
+.hero-preview-section {
+    width: 100%;
+    margin-bottom: 44px;
+}
+
+.hero-card {
+    background: rgba(15, 23, 38, 0.9);
+    border: 2px solid var(--gold-primary);
+    border-radius: 20px;
+    padding: 28px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6), 0 0 30px rgba(200,155,60,0.15);
+    backdrop-filter: blur(16px);
+}
+
+.hero-card-win {
+    border-color: #0ac8b9;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6), 0 0 30px rgba(10,200,185,0.2);
+}
+
+.hero-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    padding-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.hero-tag-group {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.hero-match-no {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+}
+
+.hero-status {
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 800;
+}
+
+.hero-status.win-badge {
+    background: rgba(10,200,185,0.2);
+    color: #0ac8b9;
+    border: 1px solid #0ac8b9;
+}
+
+.hero-status.loss-badge {
+    background: rgba(232,64,87,0.2);
+    color: #e84057;
+    border: 1px solid #e84057;
+}
+
+.hero-champ-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.hero-champ-title h2 {
+    font-size: 1.5rem;
+    color: #fff;
+}
+
+.hero-champ-title h2 span {
+    font-size: 1rem;
+    color: var(--text-secondary);
+    font-weight: 400;
+}
+
+.hero-card-body {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+    margin-bottom: 28px;
+}
+
+.hero-section {
+    background: rgba(8, 12, 20, 0.6);
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.06);
+}
+
+.hero-section h3 {
+    font-size: 0.92rem;
+    color: var(--gold-light);
+    margin-bottom: 12px;
+}
+
+.hero-rune-info {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.rune-pill {
+    font-size: 0.8rem;
+    padding: 6px 12px;
+    border-radius: 8px;
+    background: rgba(200,155,60,0.1);
+    color: var(--gold-hover);
+    border: 1px solid rgba(200,155,60,0.2);
+}
+
+.hero-items-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.item-slot-preview {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255,255,255,0.05);
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+.item-slot-preview img {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+}
+
+.ward-slot {
+    border-color: var(--gold-primary);
+}
+
+.hero-champs-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.champ-chip {
+    font-size: 0.75rem;
+    padding: 4px 10px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: var(--text-secondary);
+}
+
+.champ-chip.self-champ {
+    background: rgba(10,200,185,0.15);
+    border-color: #0ac8b9;
+    color: #fff;
+    font-weight: 700;
+}
+
+.hero-card-actions {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
+.export-btn {
+    flex: 1;
+    min-width: 200px;
+    padding: 14px 18px;
+    font-size: 0.92rem;
+    font-weight: 800;
+    border-radius: 12px;
+    border: none;
+    cursor: pointer;
+    transition: var(--transition);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.btn-export-rune {
+    background: linear-gradient(135deg, #c89b3c 0%, #a07828 100%);
+    color: #000;
+}
+
+.btn-export-rune:hover {
+    box-shadow: 0 4px 20px rgba(200,155,60,0.5);
+    transform: translateY(-2px);
+}
+
+.btn-export-item {
+    background: linear-gradient(135deg, #0ac8b9 0%, #08968b 100%);
+    color: #000;
+}
+
+.btn-export-item:hover {
+    box-shadow: 0 4px 20px rgba(10,200,185,0.5);
+    transform: translateY(-2px);
+}
+
+.btn-export-strategy {
+    background: linear-gradient(135deg, #e84057 0%, #b8283d 100%);
+    color: #fff;
+}
+
+.btn-export-strategy:hover {
+    box-shadow: 0 4px 20px rgba(232,64,87,0.5);
+    transform: translateY(-2px);
+}
+
+/* 60개 매칭 목록 카드 그리드 */
+.matches-section-title {
+    width: 100%;
+    font-size: 1.2rem;
+    color: var(--gold-light);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.match-grid-container {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 14px;
+    margin-bottom: 48px;
+    max-height: 480px;
+    overflow-y: auto;
+    padding-right: 6px;
+}
+
+.match-item-card {
+    background: rgba(12, 18, 30, 0.7);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 12px;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.match-item-card:hover {
+    transform: translateY(-3px);
+    border-color: var(--gold-primary);
+}
+
+.match-item-card.selected {
+    border: 2px solid var(--gold-hover);
+    background: rgba(200, 155, 60, 0.15);
+}
+
+.match-item-card.win {
+    border-left: 4px solid #0ac8b9;
+}
+
+.match-item-card.loss {
+    border-left: 4px solid #e84057;
+}
+
+.match-card-header {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    margin-bottom: 6px;
+}
+
+.match-res.win { color: #0ac8b9; font-weight: 700; }
+.match-res.loss { color: #e84057; font-weight: 700; }
+
+.match-champ {
+    display: block;
+    font-size: 0.95rem;
+    color: #fff;
+    margin-bottom: 4px;
+}
+
+.match-kda {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.match-card-footer {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.7rem;
+    color: var(--gold-primary);
+}
+
+/* Modal UI */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    backdrop-filter: blur(8px);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.modal-overlay.hidden {
+    display: none;
+}
+
+.modal-content {
+    background: #0d1522;
+    border: 1px solid var(--gold-primary);
+    border-radius: 16px;
+    width: 100%;
+    max-width: 680px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h3 {
+    font-size: 1.2rem;
+    color: var(--gold-light);
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 1.5rem;
+    cursor: pointer;
+}
+
+.close-btn:hover { color: #fff; }
+
+.fow-textarea {
+    width: 100%;
+    height: 220px;
+    background: #060a10;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px;
+    padding: 12px;
+    color: #fff;
+    font-family: monospace;
+    font-size: 0.85rem;
+    resize: none;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.btn-secondary {
+    background: rgba(255,255,255,0.1);
+    color: #ccc;
+    border: none;
+    padding: 10px 18px;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.btn-primary {
+    background: var(--gold-primary);
+    color: #000;
+    font-weight: 700;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
