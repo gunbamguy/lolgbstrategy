@@ -5,6 +5,7 @@
 let itemVersion = '';
 let itemMap = {};
 let selectedItemSlot = null;
+let currentCategory = null;
 
 const tagTranslations = {
     "Boots": "신발",
@@ -38,6 +39,42 @@ const tagTranslations = {
     "MagicResist": "마법 저항",
     "GoldPer": "골드 획득"
 };
+
+// 🔤 한글 초성 추출 유틸리티 (예: "메자이" -> "ㅁㅈㅇ")
+function getChosung(str) {
+    const chosungList = [
+        'ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ',
+        'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'
+    ];
+    let result = '';
+    for (let i = 0; i < str.length; i++) {
+        const code = str.charCodeAt(i) - 44032;
+        if (code >= 0 && code <= 11172) {
+            result += chosungList[Math.floor(code / 588)];
+        } else {
+            result += str.charAt(i);
+        }
+    }
+    return result;
+}
+
+// 🎯 아이템 검색 매칭 (이름, 라이엇 내장 별칭/초성, 직접 추출한 초성)
+function matchItem(item, query) {
+    if (!query) return true;
+    const cleanQuery = query.trim().toLowerCase();
+    if (!cleanQuery) return true;
+
+    const itemName = (item.name || '').toLowerCase();
+    if (itemName.includes(cleanQuery)) return true;
+
+    const colloq = (item.colloq || '').toLowerCase();
+    if (colloq.includes(cleanQuery)) return true;
+
+    const itemChosung = getChosung(itemName);
+    if (itemChosung.includes(cleanQuery)) return true;
+
+    return false;
+}
 
 window.ITEM_ENGINE = {
     init: async function() {
@@ -77,6 +114,14 @@ window.ITEM_ENGINE = {
         if (closeItem) {
             closeItem.addEventListener('click', () => {
                 document.getElementById('item-popup').classList.add('hidden');
+            });
+        }
+
+        // 🔍 검색창 실시간 입력 이벤트 핸들러
+        const searchInput = document.getElementById('item-search-input');
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                self.renderItemList(currentCategory, e.target.value);
             });
         }
 
@@ -165,36 +210,65 @@ window.ITEM_ENGINE = {
     },
 
     displayItemsByCategory: function(category) {
+        currentCategory = category;
         const itemPopup = document.getElementById('item-popup');
+        const searchInput = document.getElementById('item-search-input');
+
+        if (searchInput) {
+            searchInput.value = '';
+        }
+
+        this.renderItemList(category, '');
+        if (itemPopup) {
+            itemPopup.classList.remove('hidden');
+            if (searchInput) searchInput.focus();
+        }
+    },
+
+    renderItemList: function(category, query) {
         const itemsList = document.getElementById('items-list');
-        if (!itemPopup || !itemsList) return;
+        if (!itemsList) return;
 
         itemsList.innerHTML = '';
         const self = this;
+        let matchCount = 0;
 
         for (const id in itemMap) {
             const item = itemMap[id];
             if (item.inStore !== false && item.tags && item.tags.includes(category)) {
-                const itemDiv = document.createElement('div');
-                itemDiv.classList.add('item-grid-item');
-                itemDiv.dataset.id = id;
+                if (matchItem(item, query)) {
+                    matchCount++;
+                    const itemDiv = document.createElement('div');
+                    itemDiv.classList.add('item-grid-item');
+                    itemDiv.dataset.id = id;
 
-                const img = document.createElement('img');
-                img.src = `https://ddragon.leagueoflegends.com/cdn/${itemVersion}/img/item/${id}.png`;
-                img.alt = item.name;
-                img.title = item.name;
+                    const img = document.createElement('img');
+                    img.src = `https://ddragon.leagueoflegends.com/cdn/${itemVersion}/img/item/${id}.png`;
+                    img.alt = item.name;
+                    img.title = `${item.name}${item.plaintext ? ' - ' + item.plaintext : ''}`;
 
-                itemDiv.appendChild(img);
-                itemsList.appendChild(itemDiv);
+                    itemDiv.appendChild(img);
+                    itemsList.appendChild(itemDiv);
 
-                itemDiv.addEventListener('click', () => {
-                    self.selectItem(id, item.name);
-                    itemPopup.classList.add('hidden');
-                });
+                    itemDiv.addEventListener('click', () => {
+                        self.selectItem(id, item.name);
+                        const itemPopup = document.getElementById('item-popup');
+                        if (itemPopup) itemPopup.classList.add('hidden');
+                    });
+                }
             }
         }
 
-        itemPopup.classList.remove('hidden');
+        if (matchCount === 0) {
+            const emptyMsg = document.createElement('div');
+            emptyMsg.style.gridColumn = '1 / -1';
+            emptyMsg.style.textAlign = 'center';
+            emptyMsg.style.color = '#8b9ab5';
+            emptyMsg.style.padding = '20px 0';
+            emptyMsg.style.fontSize = '0.9rem';
+            emptyMsg.textContent = `'${query}' 검색 결과가 없습니다.`;
+            itemsList.appendChild(emptyMsg);
+        }
     },
 
     selectItem: function(id, name) {
