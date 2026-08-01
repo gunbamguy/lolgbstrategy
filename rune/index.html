@@ -259,10 +259,15 @@
 
         <!-- 아이템 그리드 팝업 모달 -->
         <div id="item-popup" class="hidden">
-            <h3>🗡️ 아이템 선택</h3>
-            <div class="item-search-wrapper" style="margin-bottom: 14px;">
+            <div class="modal-top-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                <h3 style="margin-bottom: 0;">🗡️ 아이템 선택</h3>
+                <button type="button" id="modal-add-tree-btn" class="btn btn-primary" style="padding: 6px 14px; font-size: 0.85rem;">✏️ 템트리 라인 수정</button>
+            </div>
+            <div class="item-search-wrapper">
                 <input type="text" id="item-search-input" placeholder="🔍 아이템 이름 또는 초성 검색 (예: ㅁㅈㅇ, 몰왕, 무대)..." autocomplete="off">
             </div>
+            <!-- 카테고리 선택 탭 바 -->
+            <div id="item-category-tabs" class="category-tabs-bar"></div>
             <div id="items-list" class="item-grid"></div>
             <button type="button" id="close-item-popup" class="btn btn-secondary">닫기</button>
         </div>
