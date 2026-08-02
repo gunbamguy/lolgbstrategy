@@ -299,10 +299,24 @@ window.ITEM_ENGINE = {
             makeModalDraggable(itemPopup, itemPopupDragZone);
         }
         document.querySelectorAll('#item-container .item-slot').forEach(slot => {
+            // ❌ Ctrl + 클릭 (또는 Cmd + 클릭) 시 슬롯 아이템 즉시 제거
             slot.addEventListener('click', (event) => {
                 event.stopPropagation();
+                if (event.ctrlKey || event.metaKey) {
+                    slot.innerHTML = '';
+                    slot.classList.remove('active-slot');
+                    return;
+                }
                 self.setActiveSlot(slot);
                 self.handleSlotClick();
+            });
+
+            // 🖱️ 우클릭(contextmenu) 시 기본 컨텍스트 메뉴 차단 후 아이템 제거
+            slot.addEventListener('contextmenu', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                slot.innerHTML = '';
+                slot.classList.remove('active-slot');
             });
         });
 
@@ -1214,9 +1228,41 @@ window.ITEM_ENGINE = {
 
         const isPng = (format === 'png');
 
-        // 캡처 전 미니 ✖ 삭제 버튼 임시 숨김 (이중 안전장치)
+        // 캡처 전 미니 ✖ 삭제 버튼 임시 숨김
         const deleteBtns = element.querySelectorAll('.btn-sector-mini-delete');
         deleteBtns.forEach(btn => btn.style.visibility = 'hidden');
+
+        // 캡처 전 선택 슬롯(.active-slot) 및 섹터(.active-sector) 강조 하이라이트 임시 제거
+        const activeSlots = document.querySelectorAll('.active-slot');
+        const activeSectors = document.querySelectorAll('.active-sector');
+
+        activeSlots.forEach(slot => slot.classList.remove('active-slot'));
+        activeSectors.forEach(sec => sec.classList.remove('active-sector'));
+
+        // 📐 캡처 시 딱 출력된 내용물 크기만큼만 맞춰주고 좌우 예쁜 패딩(16px 24px) 임시 부여
+        const origDisplay = element.style.display;
+        const origWidth = element.style.width;
+        const origMaxWidth = element.style.maxWidth;
+        const origPadding = element.style.padding;
+        const origBoxSizing = element.style.boxSizing;
+
+        element.style.display = 'inline-flex';
+        element.style.flexDirection = 'column';
+        element.style.width = 'fit-content';
+        element.style.maxWidth = 'none';
+        element.style.padding = '16px 24px';
+        element.style.boxSizing = 'border-box';
+
+        const restoreStyles = () => {
+            deleteBtns.forEach(btn => btn.style.visibility = '');
+            activeSlots.forEach(slot => slot.classList.add('active-slot'));
+            activeSectors.forEach(sec => sec.classList.add('active-sector'));
+            element.style.display = origDisplay;
+            element.style.width = origWidth;
+            element.style.maxWidth = origMaxWidth;
+            element.style.padding = origPadding;
+            element.style.boxSizing = origBoxSizing;
+        };
 
         html2canvas(element, {
             backgroundColor: isPng ? null : '#090c10',
@@ -1225,7 +1271,8 @@ window.ITEM_ENGINE = {
             scale: 2,
             ignoreElements: (el) => el.classList && el.classList.contains('btn-sector-mini-delete')
         }).then(canvas => {
-            deleteBtns.forEach(btn => btn.style.visibility = '');
+            restoreStyles();
+
             const link = document.createElement('a');
             if (format === 'jpg' || format === 'jpeg') {
                 link.href = canvas.toDataURL('image/jpeg', 0.9);
@@ -1236,7 +1283,7 @@ window.ITEM_ENGINE = {
             }
             link.click();
         }).catch(error => {
-            deleteBtns.forEach(btn => btn.style.visibility = '');
+            restoreStyles();
             console.error('이미지 내보내기 중 오류 발생:', error);
         });
     }

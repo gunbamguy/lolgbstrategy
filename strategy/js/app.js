@@ -10,6 +10,7 @@ let selectedScreenshotId = null;
 let currentVersion = "";
 let championData = {};
 let champIconSize = 40;
+let minionIconSize = 30;
 let isAutoSizeEnabled = true;
 
 const obsChannel = new BroadcastChannel('lol_board_obs');
@@ -24,29 +25,39 @@ function initWebSocket() {
         return;
     }
 
-    const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProto}//${window.location.host}`;
-    wsConnection = new WebSocket(wsUrl);
-    
-    wsConnection.onopen = () => {
-        console.log("WebSocket 연결 성공");
-        wsRetryCount = 0;
-        syncObsScene();
-    };
-    
-    wsConnection.onclose = () => {
-        wsRetryCount++;
-        if (wsRetryCount < MAX_WS_RETRIES) {
-            console.log(`WebSocket 연결 끊김 (${wsRetryCount}/${MAX_WS_RETRIES}). 3초 후 재연결 시도...`);
-            setTimeout(initWebSocket, 3000);
-        } else {
-            console.warn(`[안내] WebSocket 연결 시도를 ${MAX_WS_RETRIES}회 실패하여 재연결을 중단합니다. 정적 웹페이지(GitHub Pages 등) 환경에서는 동일 브라우저 내 탭 간 동기화(BroadcastChannel)만 원활히 작동합니다.`);
-        }
-    };
-    
-    wsConnection.onerror = (err) => {
-        console.log("WebSocket 연결 에러 (서버 미구동 또는 정적 호스팅 환경일 수 있습니다.)");
-    };
+    // 로컬 file:// 환경이거나 host가 비어있는 경우 WebSocket 예외 차단
+    if (!window.location.host || window.location.protocol === 'file:') {
+        console.log('[안내] 정적/로컬 파일(file://) 환경입니다. BroadcastChannel 탭 간 동기화로 동작합니다.');
+        return;
+    }
+
+    try {
+        const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProto}//${window.location.host}`;
+        wsConnection = new WebSocket(wsUrl);
+
+        wsConnection.onopen = () => {
+            console.log("WebSocket 연결 성공");
+            wsRetryCount = 0;
+            syncObsScene();
+        };
+
+        wsConnection.onclose = () => {
+            wsRetryCount++;
+            if (wsRetryCount < MAX_WS_RETRIES) {
+                console.log(`WebSocket 연결 끊김 (${wsRetryCount}/${MAX_WS_RETRIES}). 3초 후 재연결 시도...`);
+                setTimeout(initWebSocket, 3000);
+            } else {
+                console.warn(`[안내] WebSocket 연결 시도를 ${MAX_WS_RETRIES}회 실패하여 재연결을 중단합니다. 정적 웹페이지(GitHub Pages 등) 환경에서는 동일 브라우저 내 탭 간 동기화(BroadcastChannel)만 원활히 작동합니다.`);
+            }
+        };
+
+        wsConnection.onerror = (err) => {
+            console.log("WebSocket 연결 에러 (서버 미구동 또는 정적 호스팅 환경일 수 있습니다.)");
+        };
+    } catch (e) {
+        console.log("WebSocket 생성 건너뜀 (정적 호스팅 환경):", e.message);
+    }
 }
 
 function sendToObs(message) {
@@ -186,6 +197,17 @@ async function init() {
             renderScene();
         });
 
+        // 👾 미니언/오브젝트 크기 슬라이더 이벤트 바인딩
+        const minionSizeSlider = document.getElementById('minion-size-slider');
+        if (minionSizeSlider) {
+            minionSizeSlider.addEventListener('input', (e) => {
+                minionIconSize = parseInt(e.target.value);
+                const indicator = document.getElementById('minion-size-indicator');
+                if (indicator) indicator.innerText = minionIconSize + "px";
+                renderScene();
+            });
+        }
+
         // OBS 마우스 동기화 체크박스 이벤트 바인딩
         const syncMouseCheckbox = document.getElementById('sync-mouse-checkbox');
         if (syncMouseCheckbox) {
@@ -203,6 +225,7 @@ async function init() {
         
         // 기본값 반영 및 초기화
         sizeSlider.disabled = isAutoSizeEnabled;
+        if (minionSizeSlider) minionSizeSlider.disabled = isAutoSizeEnabled;
         if (isAutoSizeEnabled) {
             applyAutoSize();
         }
@@ -210,6 +233,7 @@ async function init() {
         autoSizeCheckbox.addEventListener('change', (e) => {
             isAutoSizeEnabled = e.target.checked;
             sizeSlider.disabled = isAutoSizeEnabled;
+            if (minionSizeSlider) minionSizeSlider.disabled = isAutoSizeEnabled;
             if (isAutoSizeEnabled) {
                 applyAutoSize();
             }
@@ -234,18 +258,27 @@ async function init() {
 
 function applyAutoSize() {
     if (!isAutoSizeEnabled) return;
-    // 비율 계산: 120% (1.2) -> 40px, 400% (4.0) -> 15px
-    // 수식: 40 - (25 / 2.8) * (zoomLevel - 1.2)
-    let calculatedSize = Math.round(40 - (25 / 2.8) * (zoomLevel - 1.2));
-    calculatedSize = Math.max(15, Math.min(70, calculatedSize));
+    // 챔피언 비율 계산: 120% (1.2) -> 40px, 400% (4.0) -> 15px
+    let calculatedChampSize = Math.round(40 - (25 / 2.8) * (zoomLevel - 1.2));
+    calculatedChampSize = Math.max(15, Math.min(70, calculatedChampSize));
+    champIconSize = calculatedChampSize;
     
-    champIconSize = calculatedSize;
-    
+    // 미니언/오브젝트 비율 계산: 120% (1.2) -> 30px, 400% (4.0) -> 14px
+    let calculatedMinionSize = Math.round(30 - (16 / 2.8) * (zoomLevel - 1.2));
+    calculatedMinionSize = Math.max(12, Math.min(65, calculatedMinionSize));
+    minionIconSize = calculatedMinionSize;
+
     // UI 업데이트
     const sizeSlider = document.getElementById('size-slider');
-    sizeSlider.value = calculatedSize;
-    document.getElementById('size-indicator').innerText = calculatedSize + "px";
+    if (sizeSlider) sizeSlider.value = calculatedChampSize;
+    const sizeIndicator = document.getElementById('size-indicator');
+    if (sizeIndicator) sizeIndicator.innerText = calculatedChampSize + "px";
     
+    const minionSizeSlider = document.getElementById('minion-size-slider');
+    if (minionSizeSlider) minionSizeSlider.value = calculatedMinionSize;
+    const minionSizeIndicator = document.getElementById('minion-size-indicator');
+    if (minionSizeIndicator) minionSizeIndicator.innerText = calculatedMinionSize + "px";
+
     renderScene();
 }
 
@@ -1635,8 +1668,8 @@ function renderDOM(obj, className) {
         el.classList.remove('selected');
     }
 
-    // 고정 크기 복원
-    const baseSize = obj.type === 'champion' ? champIconSize : (obj.type === 'minion' ? 44 : 32);
+    // 챔피언 / 미니언 / 오브젝트 별 실시간 크기 적용
+    const baseSize = obj.type === 'champion' ? champIconSize : minionIconSize;
     el.style.width = baseSize + "px";
     el.style.height = baseSize + "px";
 
@@ -2568,6 +2601,8 @@ function renderScreenshots() {
         itemEl.appendChild(btnGroup);
         container.appendChild(itemEl);
     });
+}
+
 function checkAndApplyImportedChampions() {
     try {
         const saved = localStorage.getItem('gudo_imported_champions');

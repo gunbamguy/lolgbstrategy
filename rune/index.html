@@ -15,6 +15,9 @@
     <div class="app-container">
         <!-- 메인 통합 헤더 -->
         <header class="app-header">
+            <a href="../index.html" class="home-link-btn">
+                <span>🏠</span> 메인 허브
+            </a>
             <div class="logo-area">
                 <span class="lol-badge">LoL</span>
                 <h1 id="appTitle">룬 빌드 엑스포터</h1>
@@ -147,8 +150,11 @@
         <!-- ⚔️ 2. 아이템 익스포터 메인 영역 (초기 숨김) -->
         <main class="main-content hidden" id="itemAppView">
             <section class="item-card">
-                <div class="card-header">
+                <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
                     <h2>⚔️ 아이템 빌드 슬롯 구성 (4+3 스타일)</h2>
+                    <span style="font-size: 0.83rem; color: var(--gold-light); background: rgba(200, 155, 60, 0.15); border: 1px solid rgba(200, 155, 60, 0.3); padding: 4px 10px; border-radius: 6px;">
+                        💡 <strong>슬롯 클릭</strong>: 아이템 선택 · 변경 | ❌ <strong>Ctrl + 클릭</strong>: 아이템 제거
+                    </span>
                 </div>
 
                 <!-- 아이템 슬롯 그리드 -->

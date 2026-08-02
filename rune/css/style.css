@@ -57,8 +57,37 @@ body {
 
 /* Header */
 .app-header {
+    position: relative;
     text-align: center;
     margin-bottom: 24px;
+    padding-top: 10px;
+}
+
+.home-link-btn {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: rgba(200, 155, 60, 0.12);
+    border: 1px solid rgba(200, 155, 60, 0.35);
+    border-radius: var(--radius-sm);
+    color: var(--gold-light);
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 700;
+    transition: var(--transition);
+    backdrop-filter: blur(4px);
+}
+
+.home-link-btn:hover {
+    background: rgba(200, 155, 60, 0.25);
+    border-color: var(--gold-primary);
+    color: #ffffff;
+    box-shadow: 0 0 12px rgba(200, 155, 60, 0.3);
 }
 
 .logo-area {

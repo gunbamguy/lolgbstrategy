@@ -111,7 +111,10 @@
                 <button class="tool-btn btn-green" onclick="spawnAllCamps()">🌲 캠프젠</button>
             </div>
 
-            <div style="color:#888; font-size:0.9em; margin-left: auto; font-weight: bold;">롤 전략보드</div>
+            <div class="toolbar-group" style="border-left: 1px solid #444; padding-left: 10px; margin-left: auto; display: flex; align-items: center; gap: 10px;">
+                <a href="../index.html" class="tool-btn" style="background: rgba(200, 155, 60, 0.2); border: 1px solid #c89b3c; color: #f0e6d2; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; font-weight: bold; padding: 4px 10px; border-radius: 4px;">🏠 메인 허브</a>
+                <span style="color:#888; font-size:0.9em; font-weight: bold;">롤 전략보드</span>
+            </div>
         </div>
 
         <div id="map-area">
@@ -208,10 +211,17 @@
         
         <div id="size-control-container" style="padding: 10px 20px; background: rgba(0,0,0,0.5); border-top: 1px solid #333; display: flex; flex-direction: column; gap: 6px; flex-shrink: 0;">
             <div style="display: flex; justify-content: space-between; font-size: 13px; color: #ccc; font-weight: bold;">
-                <span>챔피언 크기</span>
+                <span>👤 챔피언 크기</span>
                 <span id="size-indicator">40px</span>
             </div>
             <input type="range" id="size-slider" min="15" max="70" value="40" step="5" style="width: 100%; accent-color: var(--accent-color); cursor: pointer; background: #444; height: 6px; border-radius: 3px; outline: none;">
+            
+            <div style="display: flex; justify-content: space-between; font-size: 13px; color: #ccc; font-weight: bold; margin-top: 4px;">
+                <span>👾 미니언 / 오브젝트 크기</span>
+                <span id="minion-size-indicator">30px</span>
+            </div>
+            <input type="range" id="minion-size-slider" min="12" max="65" value="30" step="2" style="width: 100%; accent-color: var(--accent-color); cursor: pointer; background: #444; height: 6px; border-radius: 3px; outline: none;">
+
             <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #aaa; cursor: pointer; margin-top: 4px; user-select: none;">
                 <input type="checkbox" id="auto-size-checkbox" checked style="cursor: pointer; accent-color: var(--accent-color);">
                 <span>화면 배율에 따라 크기 자동 조정</span>
