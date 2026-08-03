@@ -66,8 +66,19 @@
         </div>
     </div>
 
+    <div id="sidebar-overlay" onclick="closeMobileSidebars()"></div>
+
     <div id="main-container">
         <div id="top-toolbar">
+            <!-- 🍔 모바일 전용 햄버거 메뉴 토글 버튼 -->
+            <button id="mobile-hamburger-btn" class="mobile-hamburger-btn" onclick="toggleMobileDropdown()" title="전체 메뉴 열기">
+                <span class="hamburger-icon">☰</span>
+                <span class="hamburger-text">메뉴</span>
+            </button>
+
+            <!-- 📱 모바일 사이드바 열기 버튼 (기존) -->
+            <button id="btn-toggle-left-sidebar" class="mobile-toggle-btn" onclick="toggleMobileSidebar('left')" title="챔피언/프리셋 목록">👥 챔피언</button>
+
             <div class="toolbar-group">
                 <button class="tool-btn" onclick="undo()" title="Ctrl+Z">↶ Undo</button>
                 <button class="tool-btn" onclick="redo()" title="Ctrl+Shift+Z">↷ Redo</button>
@@ -99,7 +110,7 @@
                 </div>
             </div>
 
-            <div class="toolbar-group" style="border-left: 1px solid #444; padding-left: 10px; color: #aaa; font-size: 0.85em; gap: 5px;">
+            <div class="toolbar-group desktop-only-group" style="border-left: 1px solid #444; padding-left: 10px; color: #aaa; font-size: 0.85em; gap: 5px;">
                 <span>단축키: <kbd style="background:#444; padding:2px 4px; border-radius:3px;">←</kbd> 이전 스텝 | <kbd style="background:#444; padding:2px 4px; border-radius:3px;">→</kbd> 다음 스텝 | <kbd style="background:#444; padding:2px 4px; border-radius:3px;">Del</kbd> 삭제</span>
             </div>
             
@@ -111,9 +122,60 @@
                 <button class="tool-btn btn-green" onclick="spawnAllCamps()">🌲 캠프젠</button>
             </div>
 
-            <div class="toolbar-group" style="border-left: 1px solid #444; padding-left: 10px; margin-left: auto; display: flex; align-items: center; gap: 10px;">
+            <div class="toolbar-group" style="border-left: 1px solid #444; padding-left: 10px; margin-left: auto; display: flex; align-items: center; gap: 8px;">
+                <!-- 📱 모바일 우측 사이드바 열기 버튼 -->
+                <button id="btn-toggle-right-sidebar" class="mobile-toggle-btn" onclick="toggleMobileSidebar('right')" title="오브젝트/크기 설정">👾 오브젝트</button>
                 <a href="../index.html" class="tool-btn" style="background: rgba(200, 155, 60, 0.2); border: 1px solid #c89b3c; color: #f0e6d2; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; font-weight: bold; padding: 4px 10px; border-radius: 4px;">🏠 메인 허브</a>
-                <span style="color:#888; font-size:0.9em; font-weight: bold;">롤 전략보드</span>
+                <span style="color:#888; font-size:0.9em; font-weight: bold;" class="desktop-only-text">롤 전략보드</span>
+            </div>
+        </div>
+
+        <!-- 🔻 햄버거 아이콘 클릭 시 아래로 스르륵 내려오는 슬라이드 드롭다운 메뉴 🔻 -->
+        <div id="mobile-dropdown-menu" class="mobile-dropdown-menu">
+            <div class="mobile-menu-section">
+                <div class="menu-label">📂 패널 열기</div>
+                <div class="menu-row">
+                    <button class="mobile-menu-btn" onclick="toggleMobileSidebar('left'); closeMobileDropdown();">👥 챔피언 / 프리셋 목록</button>
+                    <button class="mobile-menu-btn" onclick="toggleMobileSidebar('right'); closeMobileDropdown();">👾 오브젝트 / 설정 목록</button>
+                </div>
+            </div>
+
+            <div class="mobile-menu-section">
+                <div class="menu-label">✏️ 그리기 도구 선택</div>
+                <div class="menu-row">
+                    <button class="mobile-menu-btn" onclick="setDrawingTool('pen'); closeMobileDropdown();">✏️ 펜</button>
+                    <button class="mobile-menu-btn" onclick="setDrawingTool('arrow'); closeMobileDropdown();">↗ 화살표</button>
+                    <button class="mobile-menu-btn" onclick="setDrawingTool('eraser'); closeMobileDropdown();">🧼 지우개</button>
+                </div>
+            </div>
+
+            <div class="mobile-menu-section">
+                <div class="menu-label">🎨 색상 & 두께</div>
+                <div class="menu-row">
+                    <div class="color-picker-group" style="display: flex; gap: 8px; align-items: center;">
+                        <div class="color-dot" onclick="setPenColor('#ffeb3b'); closeMobileDropdown();" style="background-color: #ffeb3b; width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent;" data-color="#ffeb3b"></div>
+                        <div class="color-dot" onclick="setPenColor('#00e5ff'); closeMobileDropdown();" style="background-color: #00e5ff; width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent;" data-color="#00e5ff"></div>
+                        <div class="color-dot active" onclick="setPenColor('#ff5252'); closeMobileDropdown();" style="background-color: #ff5252; width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent;" data-color="#ff5252"></div>
+                        <div class="color-dot" onclick="setPenColor('#69f0ae'); closeMobileDropdown();" style="background-color: #69f0ae; width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent;" data-color="#69f0ae"></div>
+                        <div class="color-dot" onclick="setPenColor('#ff4081'); closeMobileDropdown();" style="background-color: #ff4081; width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent;" data-color="#ff4081"></div>
+                    </div>
+                    <div class="width-picker-group" style="display: flex; gap: 6px; align-items: center; margin-left: auto;">
+                        <button class="width-btn active" onclick="setPenWidth(4); closeMobileDropdown();" style="background: #333; color: white; border: 1px solid #444; padding: 4px 8px; border-radius: 4px; font-size: 11px;">4px</button>
+                        <button class="width-btn" onclick="setPenWidth(6); closeMobileDropdown();" style="background: #333; color: white; border: 1px solid #444; padding: 4px 8px; border-radius: 4px; font-size: 11px;">6px</button>
+                        <button class="width-btn" onclick="setPenWidth(8); closeMobileDropdown();" style="background: #333; color: white; border: 1px solid #444; padding: 4px 8px; border-radius: 4px; font-size: 11px;">8px</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mobile-menu-section">
+                <div class="menu-label">⚙️ 작업 & 이동</div>
+                <div class="menu-row">
+                    <button class="mobile-menu-btn" onclick="undo()">↶ Undo</button>
+                    <button class="mobile-menu-btn" onclick="redo()">↷ Redo</button>
+                    <button class="mobile-menu-btn btn-green" onclick="spawnAllCamps(); closeMobileDropdown();">🌲 캠프젠</button>
+                    <button class="mobile-menu-btn btn-blue" onclick="showHelpModal(); closeMobileDropdown();">❓ 도움말</button>
+                    <a href="../index.html" class="mobile-menu-btn" style="background: rgba(200, 155, 60, 0.25); border: 1px solid #c89b3c; color: #f0e6d2; text-decoration: none; text-align: center;">🏠 메인 허브</a>
+                </div>
             </div>
         </div>
 
@@ -218,9 +280,9 @@
             
             <div style="display: flex; justify-content: space-between; font-size: 13px; color: #ccc; font-weight: bold; margin-top: 4px;">
                 <span>👾 미니언 / 오브젝트 크기</span>
-                <span id="minion-size-indicator">30px</span>
+                <span id="minion-size-indicator">60px</span>
             </div>
-            <input type="range" id="minion-size-slider" min="12" max="65" value="30" step="2" style="width: 100%; accent-color: var(--accent-color); cursor: pointer; background: #444; height: 6px; border-radius: 3px; outline: none;">
+            <input type="range" id="minion-size-slider" min="20" max="130" value="60" step="4" style="width: 100%; accent-color: var(--accent-color); cursor: pointer; background: #444; height: 6px; border-radius: 3px; outline: none;">
 
             <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #aaa; cursor: pointer; margin-top: 4px; user-select: none;">
                 <input type="checkbox" id="auto-size-checkbox" checked style="cursor: pointer; accent-color: var(--accent-color);">

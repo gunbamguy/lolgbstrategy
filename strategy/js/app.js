@@ -10,7 +10,7 @@ let selectedScreenshotId = null;
 let currentVersion = "";
 let championData = {};
 let champIconSize = 40;
-let minionIconSize = 30;
+let minionIconSize = 60;
 let isAutoSizeEnabled = true;
 
 const obsChannel = new BroadcastChannel('lol_board_obs');
@@ -93,7 +93,7 @@ const contextMenu = document.getElementById('context-menu');
 
 // Zoom & Panning 상태 정의
 let zoomLevel = 1.0;
-const MIN_ZOOM = 0.5;
+const MIN_ZOOM = 0.3;
 const MAX_ZOOM = 4.0;
 
 function adjustZoom(delta, clientX, clientY) {
@@ -263,9 +263,9 @@ function applyAutoSize() {
     calculatedChampSize = Math.max(15, Math.min(70, calculatedChampSize));
     champIconSize = calculatedChampSize;
     
-    // 미니언/오브젝트 비율 계산: 120% (1.2) -> 30px, 400% (4.0) -> 14px
-    let calculatedMinionSize = Math.round(30 - (16 / 2.8) * (zoomLevel - 1.2));
-    calculatedMinionSize = Math.max(12, Math.min(65, calculatedMinionSize));
+    // 미니언/오브젝트 비율 계산: 120% (1.2) -> 60px, 400% (4.0) -> 28px
+    let calculatedMinionSize = Math.round(60 - (32 / 2.8) * (zoomLevel - 1.2));
+    calculatedMinionSize = Math.max(20, Math.min(130, calculatedMinionSize));
     minionIconSize = calculatedMinionSize;
 
     // UI 업데이트
@@ -2625,6 +2625,167 @@ function checkAndApplyImportedChampions() {
     }
 }
 
+// 📱 모바일 반응형 사이드바 드로어 제어 함수
+function toggleMobileSidebar(side) {
+    const leftSidebar = document.getElementById('sidebar-left');
+    const rightPanel = document.getElementById('right-panel-wrapper');
+    const overlay = document.getElementById('sidebar-overlay');
+
+    if (side === 'left') {
+        const isOpening = !leftSidebar.classList.contains('open');
+        if (rightPanel) rightPanel.classList.remove('open');
+        if (leftSidebar) leftSidebar.classList.toggle('open', isOpening);
+        if (overlay) overlay.classList.toggle('open', isOpening);
+    } else if (side === 'right') {
+        const isOpening = !rightPanel.classList.contains('open');
+        if (leftSidebar) leftSidebar.classList.remove('open');
+        if (rightPanel) rightPanel.classList.toggle('open', isOpening);
+        if (overlay) overlay.classList.toggle('open', isOpening);
+    }
+}
+
+function closeMobileSidebars() {
+    const leftSidebar = document.getElementById('sidebar-left');
+    const rightPanel = document.getElementById('right-panel-wrapper');
+    const overlay = document.getElementById('sidebar-overlay');
+
+    if (leftSidebar) leftSidebar.classList.remove('open');
+    if (rightPanel) rightPanel.classList.remove('open');
+    if (overlay) overlay.classList.remove('open');
+}
+
+// 🍔 모바일 햄버거 슬라이드 다운 드롭다운 메뉴 제어 함수
+function toggleMobileDropdown() {
+    const dropdown = document.getElementById('mobile-dropdown-menu');
+    const btn = document.getElementById('mobile-hamburger-btn');
+    if (!dropdown) return;
+
+    const isOpening = !dropdown.classList.contains('open');
+    dropdown.classList.toggle('open', isOpening);
+    if (btn) btn.classList.toggle('open', isOpening);
+}
+
+function closeMobileDropdown() {
+    const dropdown = document.getElementById('mobile-dropdown-menu');
+    const btn = document.getElementById('mobile-hamburger-btn');
+    if (dropdown) dropdown.classList.remove('open');
+    if (btn) btn.classList.remove('open');
+}
+
+// 📱 모바일 디바이스 접속 시 화면 폭에 맞춘 초기 맵 자동 피팅
+function autoFitMobileMap() {
+    if (window.innerWidth <= 768) {
+        const mapArea = document.getElementById('map-area');
+        if (!mapArea) return;
+        const availableWidth = mapArea.clientWidth || (window.innerWidth - 10);
+        const fitZoom = Math.max(MIN_ZOOM, Math.min(1.0, availableWidth / MAP_BASE_WIDTH));
+        zoomLevel = parseFloat(fitZoom.toFixed(2));
+        applyZoom();
+    }
+}
+
+// 📱 터치 디바이스 핀치 줌 & 1손가락 부드러운 패닝 처리
+function bindTouchEvents() {
+    const mapArea = document.getElementById('map-area');
+    const mapEl = document.getElementById('rift-map');
+    if (!mapArea || !mapEl) return;
+
+    let initialPinchDist = 0;
+    let initialZoom = 1.0;
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchScrollLeft = 0;
+    let touchScrollTop = 0;
+    let isTouchPanning = false;
+
+    mapEl.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 2) {
+            // ✌️ 2손가락 핀치 줌 (Pinch-to-zoom)
+            isTouchPanning = false;
+            const t1 = e.touches[0];
+            const t2 = e.touches[1];
+            initialPinchDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+            initialZoom = zoomLevel;
+        } else if (e.touches.length === 1) {
+            const touch = e.touches[0];
+            const targetEl = touch.target;
+            const isPlacedObj = targetEl.closest('.placed-object') || targetEl.closest('.arrow-control');
+            
+            if (isPlacedObj || isDrawing) {
+                // 👆 배치된 아이콘 드래그 또는 펜 그리기 시
+                isTouchPanning = false;
+                const mouseEvt = new MouseEvent('mousedown', {
+                    clientX: touch.clientX,
+                    clientY: touch.clientY,
+                    button: 0,
+                    bubbles: true
+                });
+                targetEl.dispatchEvent(mouseEvt);
+            } else {
+                // 🖐️ 배경 1손가락 터치 드래그 맵 스크롤(패닝)
+                isTouchPanning = true;
+                touchStartX = touch.clientX;
+                touchStartY = touch.clientY;
+                touchScrollLeft = mapArea.scrollLeft;
+                touchScrollTop = mapArea.scrollTop;
+            }
+        }
+    }, { passive: false });
+
+    window.addEventListener('touchmove', (e) => {
+        if (e.touches.length === 2 && initialPinchDist > 0) {
+            // ✌️ 핀치 줌 계산
+            e.preventDefault();
+            const t1 = e.touches[0];
+            const t2 = e.touches[1];
+            const currentDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+            const scale = currentDist / initialPinchDist;
+            const targetZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, initialZoom * scale));
+            
+            if (Math.abs(targetZoom - zoomLevel) > 0.01) {
+                zoomLevel = parseFloat(targetZoom.toFixed(2));
+                applyZoom();
+            }
+        } else if (e.touches.length === 1) {
+            const touch = e.touches[0];
+            if (isTouchPanning) {
+                // 🖐️ 부드러운 1손가락 터치 패닝 스크롤
+                e.preventDefault();
+                const deltaX = touch.clientX - touchStartX;
+                const deltaY = touch.clientY - touchStartY;
+                mapArea.scrollLeft = touchScrollLeft - deltaX;
+                mapArea.scrollTop = touchScrollTop - deltaY;
+                if (typeof syncObsViewport === 'function') syncObsViewport();
+            } else {
+                // 👆 1손가락 터치 이동
+                const mouseEvt = new MouseEvent('mousemove', {
+                    clientX: touch.clientX,
+                    clientY: touch.clientY,
+                    button: 0,
+                    bubbles: true
+                });
+                window.dispatchEvent(mouseEvt);
+            }
+        }
+    }, { passive: false });
+
+    window.addEventListener('touchend', (e) => {
+        initialPinchDist = 0;
+        isTouchPanning = false;
+        const mouseEvt = new MouseEvent('mouseup', {
+            button: 0,
+            bubbles: true
+        });
+        window.dispatchEvent(mouseEvt);
+    });
+
+    window.addEventListener('resize', autoFitMobileMap);
+}
+
 init();
-setTimeout(checkAndApplyImportedChampions, 200);
+bindTouchEvents();
+setTimeout(() => {
+    autoFitMobileMap();
+    checkAndApplyImportedChampions();
+}, 200);
 

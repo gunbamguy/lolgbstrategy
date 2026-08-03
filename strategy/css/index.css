@@ -611,3 +611,363 @@ svg line.selected {
     opacity: 0.6;
 }
 
+/* 📱 모바일 전용 반응형 슬라이딩 드로어 & 터치 레이아웃 스타일 */
+.mobile-toggle-btn {
+    display: none;
+    background: rgba(208, 184, 108, 0.2);
+    border: 1.5px solid var(--accent-color);
+    color: var(--accent-color);
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-weight: bold;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+    align-items: center;
+    gap: 4px;
+}
+
+.mobile-toggle-btn:active {
+    background: var(--accent-color);
+    color: #000;
+}
+
+#sidebar-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(2px);
+    z-index: 999;
+    display: none;
+}
+
+#sidebar-overlay.open {
+    display: block;
+}
+
+.mobile-hamburger-btn {
+    display: none;
+    background: rgba(208, 184, 108, 0.2);
+    border: 1.5px solid var(--accent-color);
+    color: var(--accent-color);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-weight: bold;
+    font-size: 13px;
+    cursor: pointer;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+    box-shadow: 0 0 10px rgba(208, 184, 108, 0.2);
+}
+
+.mobile-hamburger-btn:active, .mobile-hamburger-btn.open {
+    background: var(--accent-color);
+    color: #000;
+}
+
+.mobile-dropdown-menu {
+    display: none;
+    position: absolute;
+    top: 48px;
+    left: 0;
+    right: 0;
+    background: rgba(18, 18, 22, 0.96);
+    backdrop-filter: blur(12px);
+    border-bottom: 2px solid var(--accent-color);
+    padding: 16px;
+    flex-direction: column;
+    gap: 14px;
+    z-index: 950;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
+    transform: translateY(-100%);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+}
+
+.mobile-dropdown-menu.open {
+    transform: translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.mobile-menu-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding-bottom: 10px;
+}
+
+.mobile-menu-section:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.menu-label {
+    font-size: 11px;
+    font-weight: bold;
+    color: var(--accent-color);
+    letter-spacing: 0.5px;
+}
+
+.menu-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.mobile-menu-btn {
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #eee;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    flex: 1;
+    min-width: 100px;
+    white-space: nowrap;
+    transition: all 0.2s;
+}
+
+.mobile-menu-btn:active {
+    background: var(--accent-color);
+    color: #000;
+}
+
+/* ==========================================================================
+   📱 모바일 전용 반응형 슬라이딩 드로어 & 햄버거 드롭다운 스타일 (PC 격리)
+   ========================================================================== */
+
+/* PC(데스크톱)에서는 모바일 전용 요소들을 기본 완전 숨김 처리 */
+.mobile-hamburger-btn,
+.mobile-dropdown-menu,
+.mobile-toggle-btn,
+#sidebar-overlay {
+    display: none !important;
+}
+
+@media (max-width: 768px) {
+    /* 📱 모바일 전용 토글 버튼 및 햄버거 버튼 노출 */
+    .mobile-hamburger-btn {
+        display: inline-flex !important;
+        background: rgba(208, 184, 108, 0.2);
+        border: 1.5px solid var(--accent-color);
+        color: var(--accent-color);
+        padding: 5px 10px;
+        border-radius: 6px;
+        font-weight: bold;
+        font-size: 12px;
+        cursor: pointer;
+        align-items: center;
+        gap: 5px;
+        transition: all 0.2s ease;
+        box-shadow: 0 0 10px rgba(208, 184, 108, 0.2);
+    }
+
+    .mobile-hamburger-btn:active, .mobile-hamburger-btn.open {
+        background: var(--accent-color);
+        color: #000;
+    }
+
+    .mobile-toggle-btn {
+        display: inline-flex !important;
+        background: rgba(208, 184, 108, 0.15) !important;
+        border: 1px solid var(--accent-color) !important;
+        color: var(--accent-color) !important;
+        padding: 5px 9px !important;
+        border-radius: 6px !important;
+        font-weight: bold !important;
+        font-size: 12px !important;
+    }
+
+    .desktop-only-text,
+    .desktop-only-group {
+        display: none !important;
+    }
+
+    /* 📱 오버레이 배경 */
+    #sidebar-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.65);
+        backdrop-filter: blur(2px);
+        z-index: 999;
+        display: none !important;
+    }
+
+    #sidebar-overlay.open {
+        display: block !important;
+    }
+
+    /* 📱 슬라이드 다운 햄버거 드롭다운 메뉴 */
+    .mobile-dropdown-menu {
+        display: none;
+        position: absolute;
+        top: 48px;
+        left: 0;
+        right: 0;
+        background: rgba(18, 18, 22, 0.96);
+        backdrop-filter: blur(12px);
+        border-bottom: 2px solid var(--accent-color);
+        padding: 14px 16px;
+        flex-direction: column;
+        gap: 12px;
+        z-index: 950;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
+        transform: translateY(-100%);
+        opacity: 0;
+        pointer-events: none;
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+    }
+
+    .mobile-dropdown-menu.open {
+        display: flex !important;
+        transform: translateY(0);
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    .mobile-menu-section {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        padding-bottom: 8px;
+    }
+
+    .mobile-menu-section:last-child {
+        border-bottom: none;
+        padding-bottom: 0;
+    }
+
+    .menu-label {
+        font-size: 11px;
+        font-weight: bold;
+        color: var(--accent-color);
+        letter-spacing: 0.5px;
+    }
+
+    .menu-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+    }
+
+    .mobile-menu-btn {
+        background: rgba(255, 255, 255, 0.07);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        color: #eee;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        flex: 1;
+        min-width: 100px;
+        white-space: nowrap;
+        transition: all 0.2s;
+    }
+
+    .mobile-menu-btn:active {
+        background: var(--accent-color);
+        color: #000;
+    }
+
+    /* 📱 프리미엄 모바일 전용 헤더 바 디자인 */
+    #top-toolbar {
+        height: auto !important;
+        min-height: 48px;
+        background: linear-gradient(180deg, #1f1f24 0%, #141416 100%) !important;
+        border-bottom: 1px solid rgba(208, 184, 108, 0.35) !important;
+        overflow-x: auto;
+        white-space: nowrap;
+        padding: 6px 12px !important;
+        gap: 8px !important;
+        scrollbar-width: thin;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        -webkit-overflow-scrolling: touch;
+    }
+
+    #top-toolbar::-webkit-scrollbar {
+        height: 3px;
+    }
+
+    #top-toolbar::-webkit-scrollbar-thumb {
+        background: var(--accent-color);
+        border-radius: 3px;
+    }
+
+    .toolbar-group {
+        flex-shrink: 0;
+        gap: 6px !important;
+    }
+
+    .tool-btn {
+        padding: 5px 9px !important;
+        font-size: 0.82em !important;
+        border-radius: 5px !important;
+    }
+
+    /* 📱 좌측 사이드바 슬라이딩 드로어 변환 */
+    #sidebar-left {
+        position: fixed !important;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: 290px !important;
+        max-width: 85vw;
+        height: 100vh !important;
+        z-index: 1000 !important;
+        transform: translateX(-100%);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 4px 0 20px rgba(0, 0, 0, 0.8) !important;
+    }
+
+    #sidebar-left.open {
+        transform: translateX(0) !important;
+    }
+
+    /* 📱 우측 패널 슬라이딩 드로어 변환 */
+    #right-panel-wrapper {
+        position: fixed !important;
+        top: 0;
+        bottom: 0;
+        right: 0;
+        width: 290px !important;
+        max-width: 85vw;
+        height: 100vh !important;
+        z-index: 1000 !important;
+        transform: translateX(100%);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: -4px 0 20px rgba(0, 0, 0, 0.8) !important;
+    }
+
+    #right-panel-wrapper.open {
+        transform: translateX(0) !important;
+    }
+
+    /* 📱 하단 타임라인 콤팩트 스타일링 */
+    #steps-container {
+        padding: 4px 8px;
+    }
+
+    .step-btn {
+        min-width: 32px;
+        height: 32px;
+        font-size: 11px;
+    }
+}
+
+
