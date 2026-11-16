@@ -219,6 +219,9 @@ body {
     box-shadow: 0 0 30px rgba(0,0,0,0.8);
     border: 2px solid #333;
     margin: 0;
+    /* 터치 제스처는 전부 JS 가 처리한다 (1손가락=그리기/드래그, 2손가락=줌/패닝).
+       브라우저 기본 스크롤/더블탭 줌이 끼어들어 좌표가 어긋나지 않도록 차단 */
+    touch-action: none;
 }
 
 #structure-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; }
@@ -251,10 +254,28 @@ svg line.selected {
 
 .placed-champion {
     border-radius: 50%;
-    border: 1.5px solid #fff;
+    border: 2px solid #fff;
     z-index: 110;
     background-color: #000;
     box-sizing: border-box;
+}
+.placed-champion.team-blue {
+    border-color: #448aff;
+    box-shadow: 0 0 6px rgba(68, 138, 255, 0.75);
+}
+.placed-champion.team-red {
+    border-color: #ff5252;
+    box-shadow: 0 0 6px rgba(255, 82, 82, 0.75);
+}
+.ghost-champion {
+    opacity: 0.35 !important;
+    pointer-events: none !important;
+    z-index: 95 !important;
+    filter: grayscale(30%) drop-shadow(0 0 2px rgba(0,0,0,0.6)) !important;
+}
+#svg-layer line.ghost-line {
+    pointer-events: none !important;
+    cursor: default !important;
 }
 .placed-icon { 
     width: 32px; height: 32px; z-index: 105; 
@@ -611,135 +632,34 @@ svg line.selected {
     opacity: 0.6;
 }
 
-/* 📱 모바일 전용 반응형 슬라이딩 드로어 & 터치 레이아웃 스타일 */
-.mobile-toggle-btn {
-    display: none;
-    background: rgba(208, 184, 108, 0.2);
-    border: 1.5px solid var(--accent-color);
-    color: var(--accent-color);
-    padding: 5px 10px;
-    border-radius: 4px;
-    font-weight: bold;
-    font-size: 12px;
-    cursor: pointer;
-    white-space: nowrap;
-    align-items: center;
-    gap: 4px;
-}
-
-.mobile-toggle-btn:active {
-    background: var(--accent-color);
-    color: #000;
-}
-
-#sidebar-overlay {
+/* --- 비간섭 토스트 알림 --- */
+#toast-container {
     position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.65);
-    backdrop-filter: blur(2px);
-    z-index: 999;
-    display: none;
-}
-
-#sidebar-overlay.open {
-    display: block;
-}
-
-.mobile-hamburger-btn {
-    display: none;
-    background: rgba(208, 184, 108, 0.2);
-    border: 1.5px solid var(--accent-color);
-    color: var(--accent-color);
-    padding: 6px 12px;
-    border-radius: 6px;
-    font-weight: bold;
-    font-size: 13px;
-    cursor: pointer;
-    align-items: center;
-    gap: 6px;
-    transition: all 0.2s ease;
-    box-shadow: 0 0 10px rgba(208, 184, 108, 0.2);
-}
-
-.mobile-hamburger-btn:active, .mobile-hamburger-btn.open {
-    background: var(--accent-color);
-    color: #000;
-}
-
-.mobile-dropdown-menu {
-    display: none;
-    position: absolute;
-    top: 48px;
-    left: 0;
-    right: 0;
-    background: rgba(18, 18, 22, 0.96);
-    backdrop-filter: blur(12px);
-    border-bottom: 2px solid var(--accent-color);
-    padding: 16px;
-    flex-direction: column;
-    gap: 14px;
-    z-index: 950;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
-    transform: translateY(-100%);
-    opacity: 0;
-    pointer-events: none;
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
-}
-
-.mobile-dropdown-menu.open {
-    transform: translateY(0);
-    opacity: 1;
-    pointer-events: auto;
-}
-
-.mobile-menu-section {
+    top: 55px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9999;
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    padding-bottom: 10px;
-}
-
-.mobile-menu-section:last-child {
-    border-bottom: none;
-    padding-bottom: 0;
-}
-
-.menu-label {
-    font-size: 11px;
-    font-weight: bold;
-    color: var(--accent-color);
-    letter-spacing: 0.5px;
-}
-
-.menu-row {
-    display: flex;
-    flex-wrap: wrap;
     gap: 8px;
-    align-items: center;
+    pointer-events: none;
 }
-
-.mobile-menu-btn {
-    background: rgba(255, 255, 255, 0.07);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    color: #eee;
-    padding: 8px 12px;
+.toast-msg {
+    background: rgba(30, 30, 30, 0.92);
+    color: #fff;
+    border: 1px solid var(--accent-color);
+    padding: 8px 16px;
     border-radius: 6px;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    flex: 1;
-    min-width: 100px;
-    white-space: nowrap;
-    transition: all 0.2s;
+    font-size: 13px;
+    font-weight: bold;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    opacity: 0;
+    transform: translateY(-8px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
 }
-
-.mobile-menu-btn:active {
-    background: var(--accent-color);
-    color: #000;
+.toast-msg.show {
+    opacity: 1;
+    transform: translateY(0);
 }
 
 /* ==========================================================================
@@ -786,6 +706,15 @@ svg line.selected {
         border-radius: 6px !important;
         font-weight: bold !important;
         font-size: 12px !important;
+        cursor: pointer;
+        align-items: center;
+        gap: 4px;
+        white-space: nowrap;
+    }
+
+    .mobile-toggle-btn:active {
+        background: var(--accent-color) !important;
+        color: #000 !important;
     }
 
     .desktop-only-text,
@@ -880,9 +809,11 @@ svg line.selected {
         transition: all 0.2s;
     }
 
-    .mobile-menu-btn:active {
+    .mobile-menu-btn:active,
+    .mobile-menu-btn.active {
         background: var(--accent-color);
         color: #000;
+        border-color: var(--accent-color);
     }
 
     /* 📱 프리미엄 모바일 전용 헤더 바 디자인 */
@@ -914,6 +845,12 @@ svg line.selected {
         gap: 6px !important;
     }
 
+    /* 그룹으로 감싸이지 않은 드로어/햄버거 버튼도 동일하게 압축 방지 */
+    .mobile-hamburger-btn,
+    .mobile-toggle-btn {
+        flex-shrink: 0 !important;
+    }
+
     .tool-btn {
         padding: 5px 9px !important;
         font-size: 0.82em !important;
@@ -929,6 +866,7 @@ svg line.selected {
         width: 290px !important;
         max-width: 85vw;
         height: 100vh !important;
+        box-sizing: border-box !important;
         z-index: 1000 !important;
         transform: translateX(-100%);
         transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -948,6 +886,7 @@ svg line.selected {
         width: 290px !important;
         max-width: 85vw;
         height: 100vh !important;
+        box-sizing: border-box !important;
         z-index: 1000 !important;
         transform: translateX(100%);
         transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);

@@ -85,9 +85,10 @@
             </div>
 
             <div class="toolbar-group" style="border-left: 1px solid #444; padding-left: 10px;">
-                <button id="tool-pen" class="tool-btn active" onclick="setDrawingTool('pen')" title="자유 곡선 그리기">✏️ 펜</button>
-                <button id="tool-arrow" class="tool-btn" onclick="setDrawingTool('arrow')" title="화살표 그리기">↗ 화살표</button>
-                <button id="tool-eraser" class="tool-btn" onclick="setDrawingTool('eraser')" title="그려진 선 지우기">🧼 지우개</button>
+                <button id="tool-pen" class="tool-btn active" onclick="setDrawingTool('pen')" title="자유 곡선 그리기 (단축키: 1)">✏️ 펜</button>
+                <button id="tool-arrow" class="tool-btn" onclick="setDrawingTool('arrow')" title="화살표 그리기 (단축키: 2)">↗ 화살표</button>
+                <button id="tool-eraser" class="tool-btn" onclick="setDrawingTool('eraser')" title="그려진 선 지우기 (단축키: 3)">🧼 지우개</button>
+                <button class="tool-btn" onclick="clearDrawingsInCurrentStep()" title="챔피언/오브젝트는 유지하고 현재 스텝의 선과 화살표만 모두 지웁니다 (단축키: C)">🧹 선만 지우기</button>
             </div>
 
             <div class="toolbar-group" style="border-left: 1px solid #444; padding-left: 10px;">
@@ -111,7 +112,7 @@
             </div>
 
             <div class="toolbar-group desktop-only-group" style="border-left: 1px solid #444; padding-left: 10px; color: #aaa; font-size: 0.85em; gap: 5px;">
-                <span>단축키: <kbd style="background:#444; padding:2px 4px; border-radius:3px;">←</kbd> 이전 스텝 | <kbd style="background:#444; padding:2px 4px; border-radius:3px;">→</kbd> 다음 스텝 | <kbd style="background:#444; padding:2px 4px; border-radius:3px;">Del</kbd> 삭제</span>
+                <span>단축키: <kbd style="background:#444; padding:2px 4px; border-radius:3px;">1~3</kbd> 도구 | <kbd style="background:#444; padding:2px 4px; border-radius:3px;">C</kbd> 선지우기 | <kbd style="background:#444; padding:2px 4px; border-radius:3px;">←/→</kbd> 스텝 | <kbd style="background:#444; padding:2px 4px; border-radius:3px;">Del</kbd> 삭제</span>
             </div>
             
             <div class="toolbar-group" style="border-left: 1px solid #444; padding-left: 10px;">
@@ -143,9 +144,10 @@
             <div class="mobile-menu-section">
                 <div class="menu-label">✏️ 그리기 도구 선택</div>
                 <div class="menu-row">
-                    <button class="mobile-menu-btn" onclick="setDrawingTool('pen'); closeMobileDropdown();">✏️ 펜</button>
-                    <button class="mobile-menu-btn" onclick="setDrawingTool('arrow'); closeMobileDropdown();">↗ 화살표</button>
-                    <button class="mobile-menu-btn" onclick="setDrawingTool('eraser'); closeMobileDropdown();">🧼 지우개</button>
+                    <button class="mobile-menu-btn active" data-tool="pen" onclick="setDrawingTool('pen'); closeMobileDropdown();">✏️ 펜</button>
+                    <button class="mobile-menu-btn" data-tool="arrow" onclick="setDrawingTool('arrow'); closeMobileDropdown();">↗ 화살표</button>
+                    <button class="mobile-menu-btn" data-tool="eraser" onclick="setDrawingTool('eraser'); closeMobileDropdown();">🧼 지우개</button>
+                    <button class="mobile-menu-btn" onclick="clearDrawingsInCurrentStep(); closeMobileDropdown();">🧹 선만 지우기</button>
                 </div>
             </div>
 
@@ -160,9 +162,9 @@
                         <div class="color-dot" onclick="setPenColor('#ff4081'); closeMobileDropdown();" style="background-color: #ff4081; width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent;" data-color="#ff4081"></div>
                     </div>
                     <div class="width-picker-group" style="display: flex; gap: 6px; align-items: center; margin-left: auto;">
-                        <button class="width-btn active" onclick="setPenWidth(4); closeMobileDropdown();" style="background: #333; color: white; border: 1px solid #444; padding: 4px 8px; border-radius: 4px; font-size: 11px;">4px</button>
-                        <button class="width-btn" onclick="setPenWidth(6); closeMobileDropdown();" style="background: #333; color: white; border: 1px solid #444; padding: 4px 8px; border-radius: 4px; font-size: 11px;">6px</button>
-                        <button class="width-btn" onclick="setPenWidth(8); closeMobileDropdown();" style="background: #333; color: white; border: 1px solid #444; padding: 4px 8px; border-radius: 4px; font-size: 11px;">8px</button>
+                        <button class="width-btn active" data-width="4" onclick="setPenWidth(4); closeMobileDropdown();" style="background: #333; color: white; border: 1px solid #444; padding: 4px 8px; border-radius: 4px; font-size: 11px;">4px</button>
+                        <button class="width-btn" data-width="6" onclick="setPenWidth(6); closeMobileDropdown();" style="background: #333; color: white; border: 1px solid #444; padding: 4px 8px; border-radius: 4px; font-size: 11px;">6px</button>
+                        <button class="width-btn" data-width="8" onclick="setPenWidth(8); closeMobileDropdown();" style="background: #333; color: white; border: 1px solid #444; padding: 4px 8px; border-radius: 4px; font-size: 11px;">8px</button>
                     </div>
                 </div>
             </div>
@@ -208,8 +210,18 @@
                 <button class="control-btn btn-blue" onclick="prevStep()" title="이전 Step으로 이동 (단축키: ←)">◀ 이전</button>
                 <button class="control-btn btn-blue" onclick="nextStep()" title="다음 Step으로 이동 (단축키: →)">▶ 다음</button>
                 <button class="control-btn btn-green" onclick="addNewStep()" title="현재 상태를 기반으로 다음 Step 추가">+ Step 추가</button>
-                <button class="control-btn btn-gray" onclick="resetCurrentStep()">초기화</button>
-                <button class="control-btn btn-red" onclick="deleteCurrentStep()">삭제</button>
+                <div style="display: flex; flex-direction: column; gap: 3px; margin: 0 6px; justify-content: center;">
+                    <label style="display: flex; align-items: center; gap: 4px; font-size: 11px; color: #ccc; cursor: pointer; user-select: none; white-space: nowrap;" title="체크 시 + Step 추가할 때 그려진 펜 선과 화살표를 지우지 않고 다음 스텝에 그대로 유지합니다.">
+                        <input type="checkbox" id="keep-lines-checkbox" style="accent-color: var(--accent-color); cursor: pointer; margin: 0;">
+                        <span>선 지우지 않기</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 4px; font-size: 11px; color: #ccc; cursor: pointer; user-select: none; white-space: nowrap;" title="이전 Step에서 이동한 챔피언의 원래 자리와 이동 궤적 점선을 반투명하게 표시합니다.">
+                        <input type="checkbox" id="show-ghost-checkbox" checked onchange="toggleGhostView(this.checked)" style="accent-color: var(--accent-color); cursor: pointer; margin: 0;">
+                        <span>이전 위치 잔상</span>
+                    </label>
+                </div>
+                <button class="control-btn btn-gray" onclick="resetCurrentStep()" title="현재 스텝의 모든 배치물과 선을 초기화합니다">전체 초기화</button>
+                <button class="control-btn btn-red" onclick="deleteCurrentStep()" title="현재 스텝을 삭제합니다">스텝 삭제</button>
             </div>
 
         </div>
@@ -312,7 +324,7 @@
             </div>
             <div class="modal-body">
                 <div class="help-section">
-                    <h3>🖱️ 마우스 조작</h3>
+                    <h3>🖱️ 마우스 조작 및 빠른 프리셋</h3>
                     <ul>
                         <li><strong>좌클릭 드래그 (배경)</strong>: 선택된 도구(✏️ 펜 또는 ↗ 화살표)로 그리기</li>
                         <li><strong>우클릭 드래그 (배경)</strong>: 화면 패닝 (지도 스크롤 이동)</li>
@@ -320,11 +332,24 @@
                         <li><strong>좌클릭 (챔피언/오브젝트/획)</strong>: 객체 단독 선택</li>
                         <li><strong>좌클릭 드래그 (챔피언/오브젝트)</strong>: 배치된 챔피언 및 스마트 핑 위치 이동</li>
                         <li><strong>우클릭 (챔피언/오브젝트/선)</strong>: 컨텍스트 메뉴 오픈 (화살표 추가/삭제 등)</li>
+                        <li><strong>챔피언 목록 빠른 추가</strong>: 초성 검색(예: <code>ㄹㅅ</code>) 지원, 아이콘 <strong>더블클릭 → 아군 추가</strong> / <strong>우클릭 → 적군 추가</strong></li>
+                    </ul>
+                </div>
+                <div class="help-section">
+                    <h3>📱 모바일 / 터치 조작</h3>
+                    <ul>
+                        <li><strong>1손가락 드래그 (배경)</strong>: 선택된 도구(✏️ 펜 / ↗ 화살표 / 🧼 지우개)로 그리기</li>
+                        <li><strong>1손가락 드래그 (챔피언/오브젝트)</strong>: 배치된 객체 위치 이동</li>
+                        <li><strong>1손가락 탭</strong>: 객체 단독 선택</li>
+                        <li><strong>2손가락 핀치</strong>: 두 손가락 중간 지점 기준 확대/축소</li>
+                        <li><strong>2손가락 드래그</strong>: 화면 패닝 (지도 스크롤 이동)</li>
                     </ul>
                 </div>
                 <div class="help-section">
                     <h3>⌨️ 단축키</h3>
                     <ul>
+                        <li><kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd> : ✏️ 펜 / ↗ 화살표 / 🧼 지우개 도구 즉시 전환</li>
+                        <li><kbd>C</kbd> : 챔피언/오브젝트는 남기고 현재 스텝의 선과 화살표만 지우기</li>
                         <li><kbd>←</kbd> / <kbd>→</kbd> : 이전 / 다음 스텝 이동</li>
                         <li><kbd>Del</kbd> / <kbd>Backspace</kbd> : 선택된 객체 삭제</li>
                         <li><kbd>Ctrl + Z</kbd> : 실행 취소 (Undo)</li>
@@ -334,14 +359,15 @@
                 <div class="help-section">
                     <h3>📋 스텝 및 라인 관리</h3>
                     <ul>
-                        <li><strong>+ Step 추가</strong>: 현재 상태를 바탕으로 다음 스텝을 연장하여 애니메이션을 생성합니다.</li>
-                        <li><strong>프리셋 기능</strong>: 챔피언을 드래그해서 배치하거나 아군/적군 프리셋 묶음을 전체 드롭하여 배치할 수 있습니다.</li>
+                        <li><strong>+ Step 추가</strong>: 현재 배치를 이어받아 다음 스텝을 생성합니다. (기본적으로 이전 스텝의 선/화살표는 비워지며, <strong>선 지우지 않기</strong> 체크 시 그대로 유지)</li>
+                        <li><strong>이전 위치 잔상</strong>: 직전 스텝에서 이동한 챔피언의 원래 자리를 반투명 잔상과 이동 점선으로 함께 표시합니다.</li>
+                        <li><strong>프리셋 기능</strong>: 챔피언을 드래그해서 배치하거나 아군/적군 프리셋 묶음을 전체 드롭하여 배치할 수 있습니다. (저장 시 <kbd>Enter</kbd> 지원)</li>
                     </ul>
                 </div>
                 <div class="help-section">
                     <h3>🖼️ 스크린샷 모드 조작</h3>
                     <ul>
-                        <li><strong>이미지 불러오기</strong>: 좌측 하단의 '배경 작동 모드 설정'에서 <strong>[스크린샷]</strong>을 선택한 후, 화면 안에서 <strong>Ctrl + V</strong>를 입력하면 스크린샷이 즉시 맵 배경으로 적용됩니다.</li>
+                        <li><strong>이미지 불러오기</strong>: 어느 모드에서든 이미지를 복사한 뒤 화면에서 <strong>Ctrl + V</strong>를 누르면 자동으로 스크린샷 모드로 전환되며 배경에 즉시 적용됩니다.</li>
                         <li><strong>스크린샷 관리</strong>: 좌측 상단의 [스크린샷] 탭에서 이미 저장된 목록을 확인하고 불러오거나, 이름 변경(✏️) 및 삭제(✖)를 할 수 있습니다.</li>
                         <li><strong>타워 자동 숨김</strong>: 스크린샷 모드에서는 맵 상의 기본 구조물(타워/억제기/넥서스) 레이어가 화면에서 자동으로 가려집니다.</li>
                     </ul>

@@ -7,6 +7,7 @@ let currentStepIndex = 0;
 let myTeamSide = 'blue';
 let zoomLevel = 1.0;
 let champIconSize = 40;
+let minionIconSize = 60;
 let currentVersion = "14.5.1"; // 기본값 (메시지 수신 시 업데이트됨)
 let lastViewport = {
     mapCenterX: MAP_BASE_WIDTH / 2,
@@ -15,7 +16,8 @@ let lastViewport = {
 
 let currentMode = 'map';
 let selectedScreenshotId = null;
-let screenshots = [];
+let activeScreenshotDataUrl = null;
+let showGhostChampions = true;
 
 const mapEl = document.getElementById('rift-map');
 const svgLayer = document.getElementById('svg-layer');
@@ -29,6 +31,7 @@ const obsChannel = new BroadcastChannel('lol_board_obs');
 obsChannel.onmessage = (e) => {
     handleMessage(e.data);
 };
+obsChannel.postMessage({ type: 'request-sync' });
 
 // WebSocket 리스너 및 자동 재연결
 let ws = null;
@@ -36,6 +39,9 @@ let wsRetryCount = 0;
 const MAX_WS_RETRIES = 5;
 
 function connectWebSocket() {
+    if (!window.location.host || window.location.protocol === 'file:' || window.location.hostname.endsWith('.github.io')) {
+        return;
+    }
     if (wsRetryCount >= MAX_WS_RETRIES) {
         console.warn(`[안내] OBS Viewer WebSocket 연결 시도를 ${MAX_WS_RETRIES}회 실패하여 재연결을 중단합니다. 정적 웹페이지(GitHub Pages 등) 환경에서는 동일 브라우저 내 탭 간 동기화(BroadcastChannel)만 원활히 작동합니다.`);
         return;
@@ -48,6 +54,7 @@ function connectWebSocket() {
     ws.onopen = () => {
         console.log("OBS Viewer WebSocket 연결 성공");
         wsRetryCount = 0;
+        ws.send(JSON.stringify({ type: 'request-sync' }));
     };
 
     ws.onmessage = (e) => {
@@ -85,6 +92,7 @@ function handleMessage(data) {
         myTeamSide = data.myTeamSide || 'blue';
         zoomLevel = data.zoomLevel || 1.0;
         champIconSize = data.champIconSize || 40;
+        minionIconSize = data.minionIconSize || 60;
         if (data.currentVersion) {
             currentVersion = data.currentVersion;
         }
@@ -97,15 +105,17 @@ function handleMessage(data) {
         if (data.selectedScreenshotId !== undefined) {
             selectedScreenshotId = data.selectedScreenshotId;
         }
-        if (data.screenshots) {
-            screenshots = data.screenshots;
+        if (data.activeScreenshotDataUrl !== undefined) {
+            activeScreenshotDataUrl = data.activeScreenshotDataUrl;
+        }
+        if (data.showGhostChampions !== undefined) {
+            showGhostChampions = data.showGhostChampions;
         }
         
         applyZoom();
         applyAppMode();
         renderScene();
     } else if (data.type === 'sync-viewport') {
-        console.log("[OBS 수신] sync-viewport:", data.viewport);
         zoomLevel = data.zoomLevel || 1.0;
         if (data.viewport) {
             lastViewport = data.viewport;
@@ -145,8 +155,6 @@ function applyZoom() {
         const leftOffset = obsWidth / 2 - (centerX * zoomLevel);
         const topOffset = obsHeight / 2 - (centerY * zoomLevel);
         
-        console.log("[OBS 정렬 적용] centerX:", centerX, "centerY:", centerY, "leftOffset:", leftOffset, "topOffset:", topOffset);
-        
         container.style.position = 'absolute';
         container.style.left = leftOffset + 'px';
         container.style.top = topOffset + 'px';
@@ -165,6 +173,7 @@ function renderScene() {
         timelineData[currentStepIndex] = [];
     }
     renderObjects();
+    renderGhosts();
     renderArrows();
     renderStrokes();
     renderStructures();
@@ -172,7 +181,7 @@ function renderScene() {
 
 function renderObjects() {
     const currentObjs = timelineData[currentStepIndex];
-    const allDoms = Array.from(mapEl.querySelectorAll('.placed-object, .arrow-control.start'));
+    const allDoms = Array.from(mapEl.querySelectorAll('.placed-object:not(.ghost-champion), .arrow-control.start'));
     
     // 삭제된 오브젝트 정리
     allDoms.forEach(el => {
@@ -181,7 +190,10 @@ function renderObjects() {
     });
 
     currentObjs.forEach(obj => {
-        if (obj.type === 'champion') renderDOM(obj, 'placed-object placed-champion');
+        if (obj.type === 'champion') {
+            const teamClass = obj.team ? `team-${obj.team}` : '';
+            renderDOM(obj, `placed-object placed-champion ${teamClass}`.trim());
+        }
         else if (obj.type === 'minion') {
             let shouldFlip = false;
             if (myTeamSide === 'blue') {
@@ -199,6 +211,58 @@ function renderObjects() {
         else if (obj.type === 'free_arrow') {
             renderStartCtrl(obj);
         }
+    });
+}
+
+function renderGhosts() {
+    mapEl.querySelectorAll('.ghost-champion').forEach(el => el.remove());
+    svgLayer.querySelectorAll('line.ghost-line').forEach(el => el.remove());
+
+    if (!showGhostChampions || currentStepIndex <= 0) return;
+
+    const prevObjs = timelineData[currentStepIndex - 1] || [];
+    const currentObjs = timelineData[currentStepIndex] || [];
+
+    currentObjs.forEach(obj => {
+        if (obj.type !== 'champion') return;
+        const prevObj = prevObjs.find(p => p.type === 'champion' && p.uid === obj.uid);
+        if (!prevObj) return;
+
+        const dist = Math.hypot(obj.x - prevObj.x, obj.y - prevObj.y);
+        if (dist <= 5) return;
+
+        // 1. 이동 궤적 점선
+        const ghostLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        ghostLine.setAttribute("class", "ghost-line");
+        ghostLine.setAttribute("data-ghost-uid", obj.uid);
+        ghostLine.setAttribute("x1", prevObj.x);
+        ghostLine.setAttribute("y1", prevObj.y);
+        ghostLine.setAttribute("x2", obj.x);
+        ghostLine.setAttribute("y2", obj.y);
+        const lineColor = obj.team === 'blue' ? 'rgba(68, 138, 255, 0.65)' : (obj.team === 'red' ? 'rgba(255, 82, 82, 0.65)' : 'rgba(255, 255, 255, 0.5)');
+        ghostLine.setAttribute("stroke", lineColor);
+        ghostLine.setAttribute("stroke-width", "2.5");
+        ghostLine.setAttribute("stroke-dasharray", "5,5");
+        ghostLine.setAttribute("stroke-linecap", "round");
+        svgLayer.insertBefore(ghostLine, svgLayer.firstChild);
+
+        // 2. 이전 위치 반투명 잔상 아이콘
+        const ghostEl = document.createElement('div');
+        const teamClass = obj.team ? `team-${obj.team}` : '';
+        ghostEl.className = `placed-object placed-champion ghost-champion ${teamClass}`.trim();
+        ghostEl.setAttribute('data-ghost-uid', obj.uid);
+        if (obj.champId && obj.champId !== "Poro") {
+            const imgUrl = obj.champId === "Locke" ? "images/Locke.png" : `https://ddragon.leagueoflegends.com/cdn/${currentVersion}/img/champion/${obj.champId}.png`;
+            ghostEl.style.backgroundImage = `url(${imgUrl})`;
+            ghostEl.style.backgroundSize = 'cover';
+        } else {
+            ghostEl.style.backgroundColor = '#ccc';
+        }
+        ghostEl.style.width = champIconSize + "px";
+        ghostEl.style.height = champIconSize + "px";
+        ghostEl.style.left = prevObj.x + "px";
+        ghostEl.style.top = prevObj.y + "px";
+        mapEl.appendChild(ghostEl);
     });
 }
 
@@ -224,8 +288,22 @@ function renderDOM(obj, className) {
         mapEl.appendChild(el);
     }
 
+    if (obj.type === 'champion') {
+        el.classList.toggle('team-blue', obj.team === 'blue');
+        el.classList.toggle('team-red', obj.team === 'red');
+    }
+
+    if (obj.type === 'minion') {
+        const shouldFlip = myTeamSide === 'blue'
+            ? (obj.minionType === 'minion-blue')
+            : (obj.minionType === 'minion-red');
+        el.classList.toggle('flip-dir', shouldFlip);
+        el.classList.toggle('minion-red-glow', obj.minionType === 'minion-red');
+        el.classList.toggle('minion-blue-glow', obj.minionType !== 'minion-red');
+    }
+
     // 크기 설정
-    const baseSize = obj.type === 'champion' ? champIconSize : (obj.type === 'minion' ? 44 : 32);
+    const baseSize = obj.type === 'champion' ? champIconSize : minionIconSize;
     el.style.width = baseSize + "px";
     el.style.height = baseSize + "px";
 
@@ -268,9 +346,8 @@ function renderArrows() {
         } else {
             dx = obj.arrow.dx;
             dy = obj.arrow.dy;
-            const baseSize = obj.type === 'champion' ? champIconSize : (obj.type === 'minion' ? 44 : 32);
-            startX = obj.x + baseSize / 2;
-            startY = obj.y + baseSize / 2;
+            startX = obj.x;
+            startY = obj.y;
         }
 
         let g = svgLayer.querySelector(`g.arrow-group[data-uid="${obj.uid}"]`);
@@ -300,10 +377,24 @@ function renderArrows() {
 
 function getSvgPathFromPoints(points) {
     if (!points || points.length === 0) return "";
-    let d = `M ${points[0].x} ${points[0].y}`;
-    for (let i = 1; i < points.length; i++) {
-        d += ` L ${points[i].x} ${points[i].y}`;
+    if (points.length === 1) {
+        return `M ${points[0].x} ${points[0].y} L ${points[0].x} ${points[0].y}`;
     }
+    let d = `M ${points[0].x} ${points[0].y}`;
+    if (points.length === 2) {
+        d += ` L ${points[1].x} ${points[1].y}`;
+        return d;
+    }
+    
+    d += ` L ${(points[0].x + points[1].x) / 2} ${(points[0].y + points[1].y) / 2}`;
+    for (let i = 1; i < points.length - 1; i++) {
+        const cp = points[i];
+        const next = points[i + 1];
+        const endX = (cp.x + next.x) / 2;
+        const endY = (cp.y + next.y) / 2;
+        d += ` Q ${cp.x} ${cp.y}, ${endX} ${endY}`;
+    }
+    d += ` L ${points[points.length - 1].x} ${points[points.length - 1].y}`;
     return d;
 }
 
@@ -336,7 +427,6 @@ function renderStrokes() {
 }
 
 function renderStructures() {
-    structureLayer.innerHTML = '';
     const icons = {
         blue: {
             tower: 'https://raw.communitydragon.org/14.5/game/assets/characters/turret/hud/turret_blue_circle.png',
@@ -356,19 +446,21 @@ function renderStructures() {
         const structId = `struct_${idx}`;
         const isDestroyed = currentObjs.some(o => o.type === 'structure_destroyed' && o.uid === structId);
         
-        const img = document.createElement('img');
-        img.className = 'map-structure';
-        if (isDestroyed) {
-            img.classList.add('destroyed');
+        let img = structureLayer.querySelector(`img[data-struct-id="${structId}"]`);
+        if (!img) {
+            img = document.createElement('img');
+            img.className = 'map-structure';
+            img.setAttribute('data-struct-id', structId);
+            img.src = icons[st.team][st.type];
+            img.style.left = (st.x + offsetX) + 'px';
+            img.style.top = st.y + 'px';
+            const size = st.type === 'nexus' ? 50 : st.type === 'inhib' ? 36 : 26;
+            img.style.width = size + 'px';
+            img.style.height = size + 'px';
+            
+            structureLayer.appendChild(img);
         }
-        img.src = icons[st.team][st.type];
-        img.style.left = (st.x + offsetX) + 'px';
-        img.style.top = st.y + 'px';
-        const size = st.type === 'nexus' ? 50 : st.type === 'inhib' ? 36 : 26;
-        img.style.width = size + 'px';
-        img.style.height = size + 'px';
-        
-        structureLayer.appendChild(img);
+        img.classList.toggle('destroyed', isDestroyed);
     });
 }
 
@@ -381,9 +473,8 @@ function applyAppMode() {
         }
     } else {
         if (structureLayer) structureLayer.style.display = 'none';
-        const activeScr = screenshots.find(s => s.id === selectedScreenshotId);
-        if (activeScr && mapEl) {
-            mapEl.style.backgroundImage = `url(${activeScr.dataUrl})`;
+        if (activeScreenshotDataUrl && mapEl) {
+            mapEl.style.backgroundImage = `url(${activeScreenshotDataUrl})`;
             mapEl.style.backgroundColor = '#0f0f0f';
         } else {
             if (mapEl) {

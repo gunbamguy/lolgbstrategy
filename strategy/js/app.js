@@ -6,6 +6,7 @@ let myTeamSide = 'blue';
 
 let currentMode = 'map';
 let selectedScreenshotId = null;
+let showGhostChampions = true;
 
 let currentVersion = "";
 let championData = {};
@@ -13,7 +14,34 @@ let champIconSize = 40;
 let minionIconSize = 60;
 let isAutoSizeEnabled = true;
 
+function showToast(message) {
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        document.body.appendChild(container);
+    }
+    const toast = document.createElement('div');
+    toast.className = 'toast-msg';
+    toast.innerText = message;
+    container.appendChild(toast);
+
+    requestAnimationFrame(() => {
+        toast.classList.add('show');
+    });
+
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 220);
+    }, 2000);
+}
+
 const obsChannel = new BroadcastChannel('lol_board_obs');
+obsChannel.onmessage = (e) => {
+    if (e.data && e.data.type === 'request-sync') {
+        syncObsScene(true, true);
+    }
+};
 let isSyncMouseEnabled = true;
 let wsConnection = null;
 let wsRetryCount = 0;
@@ -25,9 +53,9 @@ function initWebSocket() {
         return;
     }
 
-    // 로컬 file:// 환경이거나 host가 비어있는 경우 WebSocket 예외 차단
-    if (!window.location.host || window.location.protocol === 'file:') {
-        console.log('[안내] 정적/로컬 파일(file://) 환경입니다. BroadcastChannel 탭 간 동기화로 동작합니다.');
+    // 정적 호스팅(GitHub Pages) 및 로컬 file:// 환경에서는 WebSocket 연결 생략
+    if (!window.location.host || window.location.protocol === 'file:' || window.location.hostname.endsWith('.github.io')) {
+        console.log('[안내] 정적/로컬 파일 환경입니다. BroadcastChannel 탭 간 동기화로 동작합니다.');
         return;
     }
 
@@ -39,7 +67,16 @@ function initWebSocket() {
         wsConnection.onopen = () => {
             console.log("WebSocket 연결 성공");
             wsRetryCount = 0;
-            syncObsScene();
+            syncObsScene(true, true);
+        };
+
+        wsConnection.onmessage = (e) => {
+            try {
+                const data = JSON.parse(e.data);
+                if (data && data.type === 'request-sync') {
+                    syncObsScene(true, true);
+                }
+            } catch (err) {}
         };
 
         wsConnection.onclose = () => {
@@ -61,7 +98,6 @@ function initWebSocket() {
 }
 
 function sendToObs(message) {
-    console.log("[sendToObs] 보냄:", message.type, message);
     if (typeof obsChannel !== 'undefined') {
         obsChannel.postMessage(message);
     }
@@ -96,31 +132,36 @@ let zoomLevel = 1.0;
 const MIN_ZOOM = 0.3;
 const MAX_ZOOM = 4.0;
 
-function adjustZoom(delta, clientX, clientY) {
+// 지정한 기준점(커서/핀치 중점)을 고정한 채 목표 줌 배율로 이동
+function zoomToPoint(nextZoom, clientX, clientY) {
     const mapArea = document.getElementById('map-area');
     const rect = mapArea.getBoundingClientRect();
-    
-    // 마우스 상대 위치 계산 (지정되지 않은 경우 뷰포트 중앙 기준)
-    const mouseX = clientX !== undefined ? (clientX - rect.left) : (rect.width / 2);
-    const mouseY = clientY !== undefined ? (clientY - rect.top) : (rect.height / 2);
-    
-    // 줌 전의 맵 기준 마우스 절대 위치 (1:1 비율)
-    const mapX = (mouseX + mapArea.scrollLeft) / zoomLevel;
-    const mapY = (mouseY + mapArea.scrollTop) / zoomLevel;
-    
-    const nextZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoomLevel + delta));
-    if (nextZoom === zoomLevel) return;
-    
-    zoomLevel = nextZoom;
+
+    // 기준점 상대 위치 계산 (지정되지 않은 경우 뷰포트 중앙 기준)
+    const anchorX = clientX !== undefined ? (clientX - rect.left) : (rect.width / 2);
+    const anchorY = clientY !== undefined ? (clientY - rect.top) : (rect.height / 2);
+
+    // 줌 전의 맵 기준 기준점 절대 위치 (1:1 비율)
+    const mapX = (anchorX + mapArea.scrollLeft) / zoomLevel;
+    const mapY = (anchorY + mapArea.scrollTop) / zoomLevel;
+
+    const clamped = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, nextZoom));
+    if (clamped === zoomLevel) return;
+
+    zoomLevel = clamped;
     applyZoom();
-    
-    // 줌 후의 새로운 스크롤 위치 보정
-    mapArea.scrollLeft = mapX * zoomLevel - mouseX;
-    mapArea.scrollTop = mapY * zoomLevel - mouseY;
-    
+
+    // 줌 후의 새로운 스크롤 위치 보정 (기준점이 손가락/커서 아래 고정)
+    mapArea.scrollLeft = mapX * zoomLevel - anchorX;
+    mapArea.scrollTop = mapY * zoomLevel - anchorY;
+
     if (typeof syncObsViewport === 'function') {
         syncObsViewport();
     }
+}
+
+function adjustZoom(delta, clientX, clientY) {
+    zoomToPoint(zoomLevel + delta, clientX, clientY);
 }
 
 function resetZoom() {
@@ -183,6 +224,7 @@ async function init() {
         // Zoom & Panning 이벤트 바인딩
         bindZoomAndPanEvents();
         renderPresets();
+        checkAndApplyImportedChampions();
         initWebSocket();
 
         // 맵 스크롤(패닝)이 발생할 때 실시간 뷰포트 동기화 송신
@@ -251,6 +293,15 @@ async function init() {
 
         // paste 이벤트 바인딩 및 스크린샷 렌더링 초기화
         document.addEventListener('paste', handleScreenshotPaste);
+        const presetNameInput = document.getElementById('preset-name-input');
+        if (presetNameInput) {
+            presetNameInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    saveCurrentPreset();
+                }
+            });
+        }
         renderScreenshots();
         setAppMode('map'); // 기본 앱 모드는 맵 모드
     } catch (e) { console.error(e); }
@@ -490,6 +541,9 @@ function bindZoomAndPanEvents() {
                 draggedEl.style.left = cx + "px";
                 draggedEl.style.top = cy + "px";
                 updateArrowLine(draggedObj);
+                if (draggedObj.type === 'champion') {
+                    renderGhosts();
+                }
             } else if (dragType === 'arrow-end') {
                 draggedObj.arrow.dx = cx - draggedObj.x;
                 draggedObj.arrow.dy = cy - draggedObj.y;
@@ -554,7 +608,7 @@ function bindZoomAndPanEvents() {
             const mapRect = mapEl.getBoundingClientRect();
             const borderOffset = 2 * zoomLevel;
             const cx = (e.clientX - mapRect.left - borderOffset) / zoomLevel;
-            const cy = (e.clientY - mapRect.top) / zoomLevel;
+            const cy = (e.clientY - mapRect.top - borderOffset) / zoomLevel;
             
             const points = currentDrawingStroke.points;
             const lastPoint = points[points.length - 1];
@@ -743,7 +797,6 @@ function restoreState(snapshot) {
 }
 
 function renderStructures() {
-    structureLayer.innerHTML = '';
     const icons = {
         blue: {
             tower: 'https://raw.communitydragon.org/14.5/game/assets/characters/turret/hud/turret_blue_circle.png',
@@ -763,57 +816,101 @@ function renderStructures() {
         const structId = `struct_${idx}`;
         const isDestroyed = currentObjs.some(o => o.type === 'structure_destroyed' && o.uid === structId);
         
-        const img = document.createElement('img');
-        img.className = 'map-structure';
-        if (isDestroyed) {
-            img.classList.add('destroyed');
+        let img = structureLayer.querySelector(`img[data-struct-id="${structId}"]`);
+        if (!img) {
+            img = document.createElement('img');
+            img.className = 'map-structure';
+            img.setAttribute('data-struct-id', structId);
+            img.src = icons[st.team][st.type];
+            img.style.left = (st.x + offsetX) + 'px';
+            img.style.top = st.y + 'px';
+            const size = st.type === 'nexus' ? 50 : st.type === 'inhib' ? 36 : 26;
+            img.style.width = size + 'px';
+            img.style.height = size + 'px';
+            
+            img.onclick = function() { 
+                const nowObjs = timelineData[currentStepIndex];
+                const foundIdx = nowObjs.findIndex(o => o.type === 'structure_destroyed' && o.uid === structId);
+                if (foundIdx > -1) {
+                    nowObjs.splice(foundIdx, 1);
+                } else {
+                    nowObjs.push({
+                        type: 'structure_destroyed',
+                        uid: structId
+                    });
+                }
+                renderScene();
+                recordHistory();
+            };
+            structureLayer.appendChild(img);
         }
-        img.src = icons[st.team][st.type];
-        img.style.left = (st.x + offsetX) + 'px';
-        img.style.top = st.y + 'px';
-        const size = st.type === 'nexus' ? 50 : st.type === 'inhib' ? 36 : 26;
-        img.style.width = size + 'px';
-        img.style.height = size + 'px';
-        
-        img.onclick = function() { 
-            const nowObjs = timelineData[currentStepIndex];
-            const foundIdx = nowObjs.findIndex(o => o.type === 'structure_destroyed' && o.uid === structId);
-            if (foundIdx > -1) {
-                nowObjs.splice(foundIdx, 1);
-            } else {
-                nowObjs.push({
-                    type: 'structure_destroyed',
-                    uid: structId
-                });
-            }
-            renderScene();
-            recordHistory();
-        };
-        structureLayer.appendChild(img);
+        img.classList.toggle('destroyed', isDestroyed);
     });
 }
 
-function addSelectedToPreset(team) {
-    if (!selectedChampKey) return;
+const CHOSUNG_LIST = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+
+function getChosung(str) {
+    let result = '';
+    for (let i = 0; i < str.length; i++) {
+        const code = str.charCodeAt(i);
+        if (code >= 0xAC00 && code <= 0xD7A3) {
+            result += CHOSUNG_LIST[Math.floor((code - 0xAC00) / 588)];
+        } else {
+            result += str[i];
+        }
+    }
+    return result;
+}
+
+function matchesChampionSearch(champName, champKey, filter) {
+    if (!filter) return true;
+    const cleanFilter = filter.replace(/\s+/g, '').toLowerCase();
+    const cleanName = champName.replace(/\s+/g, '').toLowerCase();
+    const cleanChosung = getChosung(cleanName);
+    return cleanName.includes(cleanFilter) ||
+           cleanChosung.includes(cleanFilter) ||
+           champKey.toLowerCase().includes(cleanFilter);
+}
+
+function addChampToPreset(champKey, team) {
+    if (!champKey || !championData[champKey]) return;
     const targetList = team === 'blue' ? bluePreset : redPreset;
-    
-    if (targetList.includes(selectedChampKey)) {
-        alert("이미 프리셋에 추가된 챔피언입니다.");
+    const teamLabel = team === 'blue'
+        ? (myTeamSide === 'blue' ? '블루(아군)' : '블루(적군)')
+        : (myTeamSide === 'red' ? '레드(아군)' : '레드(적군)');
+
+    if (targetList.includes(champKey)) {
+        showToast(`⚠️ 이미 ${teamLabel} 프리셋에 추가된 챔피언입니다.`);
         return;
     }
     if (targetList.length >= 5) {
-        alert("팀당 최대 5명까지 추가할 수 있습니다.");
+        showToast("⚠️ 팀당 최대 5명까지 추가할 수 있습니다.");
         return;
     }
-    
-    targetList.push(selectedChampKey);
+
+    targetList.push(champKey);
     renderPresets();
-    
+    showToast(`${championData[champKey].name} → ${teamLabel} 추가`);
+
     // 선택 해제
     selectedChampKey = null;
     document.querySelectorAll('#champList .icon-item').forEach(el => el.classList.remove('selected'));
     document.getElementById('btn-add-blue').disabled = true;
     document.getElementById('btn-add-red').disabled = true;
+
+    // 검색창 텍스트 비우고 포커스 유지
+    const searchInput = document.getElementById('search');
+    if (searchInput && searchInput.value.trim() !== '') {
+        searchInput.value = '';
+        renderLeftSidebar('');
+        searchInput.focus();
+    }
+}
+
+function addSelectedToPreset(team) {
+    if (!selectedChampKey) return;
+    addChampToPreset(selectedChampKey, team);
 }
 
 function renderPresets() {
@@ -855,15 +952,16 @@ function renderSinglePreset(team, list) {
         img.title = `${champ.name} (클릭 시 프리셋에서 제거)`;
         
         img.addEventListener('mousedown', () => {
-            window.currentDragData = { dragType: "new-champion", champId: key };
+            window.currentDragData = { dragType: "new-champion", champId: key, team: team };
         });
         img.addEventListener('dragstart', (e) => {
             e.stopPropagation();
-            const dragData = { dragType: "new-champion", champId: key };
+            const dragData = { dragType: "new-champion", champId: key, team: team };
             window.currentDragData = dragData;
             e.dataTransfer.setData("text/plain", JSON.stringify(dragData));
             e.dataTransfer.setData("dragType", "new-champion");
             e.dataTransfer.setData("champId", key);
+            e.dataTransfer.setData("team", team);
         });
         
         img.addEventListener('click', () => {
@@ -883,12 +981,12 @@ function renderLeftSidebar(filter = "") {
     list.innerHTML = "";
     Object.keys(championData).sort().forEach(key => {
         const champ = championData[key];
-        if (champ.name.includes(filter) || key.toLowerCase().includes(filter.toLowerCase())) {
+        if (matchesChampionSearch(champ.name, key, filter)) {
             const img = document.createElement('img');
             img.src = key === "Locke" ? "images/Locke.png" : `https://ddragon.leagueoflegends.com/cdn/${currentVersion}/img/champion/${key}.png`;
             img.className = `icon-item ${selectedChampKey === key ? 'selected' : ''}`;
             img.draggable = true;
-            img.title = champ.name;
+            img.title = `${champ.name} (더블클릭: 아군 추가 | 우클릭: 적군 추가 | 드래그: 맵 배치)`;
             img.addEventListener('mousedown', () => {
                 window.currentDragData = { dragType: "new-champion", champId: key };
             });
@@ -913,6 +1011,17 @@ function renderLeftSidebar(filter = "") {
                     document.getElementById('btn-add-blue').disabled = false;
                     document.getElementById('btn-add-red').disabled = false;
                 }
+            });
+
+            img.addEventListener('dblclick', (e) => {
+                e.preventDefault();
+                addChampToPreset(key, 'blue');
+            });
+
+            img.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                addChampToPreset(key, 'red');
             });
             
             list.appendChild(img);
@@ -1029,7 +1138,7 @@ function renderRightSidebar() {
 }
 
 function switchRightTab(tabId) {
-    document.querySelectorAll('.sidebar-tabs .tab-btn').forEach(btn => {
+    document.querySelectorAll('#right-panel-wrapper .sidebar-tabs .tab-btn').forEach(btn => {
         btn.classList.remove('active');
         btn.style.borderBottomColor = 'transparent';
         btn.style.color = '#888';
@@ -1317,6 +1426,7 @@ function deletePreset(presetId) {
 function renderScene() {
     if (!timelineData[currentStepIndex]) { timelineData[currentStepIndex] = []; }
     renderObjects();
+    renderGhosts();
     renderArrows();
     renderStrokes();
     renderStructures();
@@ -1387,6 +1497,10 @@ function setDrawingTool(tool) {
     });
     const activeBtn = document.getElementById(`tool-${tool}`);
     if (activeBtn) activeBtn.classList.add('active');
+
+    document.querySelectorAll('#mobile-dropdown-menu .mobile-menu-btn[data-tool]').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-tool') === tool);
+    });
     
     if (tool === 'eraser') {
         mapEl.classList.add('eraser-active');
@@ -1518,11 +1632,59 @@ function renderTimeline() {
 
 function addNewStep() {
     triggerStepAnimation();
-    const currentData = JSON.parse(JSON.stringify(timelineData[currentStepIndex] || []));
-    timelineData.splice(currentStepIndex + 1, 0, currentData);
+    const keepLinesEl = document.getElementById('keep-lines-checkbox');
+    const keepLines = keepLinesEl ? keepLinesEl.checked : false;
+    let nextStepData = JSON.parse(JSON.stringify(timelineData[currentStepIndex] || []));
+
+    if (!keepLines) {
+        nextStepData = nextStepData.filter(o => o.type !== 'pen_stroke' && o.type !== 'free_arrow');
+        nextStepData.forEach(o => {
+            if (o.arrow) {
+                o.arrow = { hasArrow: false, dx: 0, dy: 0 };
+            }
+        });
+    }
+
+    timelineData.splice(currentStepIndex + 1, 0, nextStepData);
     currentStepIndex++;
+    if (selectedObjUid && !nextStepData.some(o => o.uid === selectedObjUid)) {
+        selectedObjUid = null;
+    }
     renderScene();
     recordHistory();
+}
+
+function toggleGhostView(enabled) {
+    showGhostChampions = enabled;
+    renderScene();
+}
+
+function clearDrawingsInCurrentStep() {
+    const currentObjs = timelineData[currentStepIndex] || [];
+    const hadDrawings = currentObjs.some(o => o.type === 'pen_stroke' || o.type === 'free_arrow' || (o.arrow && o.arrow.hasArrow));
+
+    if (!hadDrawings) {
+        showToast('지울 선이나 화살표가 없습니다.');
+        return;
+    }
+
+    const nextObjs = currentObjs.filter(o => o.type !== 'pen_stroke' && o.type !== 'free_arrow');
+    nextObjs.forEach(o => {
+        if (o.arrow) {
+            o.arrow = { hasArrow: false, dx: 0, dy: 0 };
+        }
+    });
+
+    if (selectedObjUid && !nextObjs.some(o => o.uid === selectedObjUid)) {
+        selectedObjUid = null;
+    }
+
+    timelineData[currentStepIndex] = nextObjs;
+    mapEl.querySelectorAll('.arrow-control').forEach(el => el.remove());
+    svgLayer.querySelectorAll('line:not(.ghost-line), path').forEach(l => l.remove());
+    renderScene();
+    recordHistory();
+    showToast('🧹 현재 스텝의 선과 화살표를 지웠습니다.');
 }
 
 function deleteCurrentStep() {
@@ -1600,7 +1762,7 @@ function nextStep() {
 
 function renderObjects() {
     const currentObjs = timelineData[currentStepIndex];
-    const allDoms = Array.from(mapEl.querySelectorAll('.placed-object, .arrow-control.start'));
+    const allDoms = Array.from(mapEl.querySelectorAll('.placed-object:not(.ghost-champion), .arrow-control.start'));
     
     // 삭제된 오브젝트 정리
     allDoms.forEach(el => {
@@ -1609,7 +1771,10 @@ function renderObjects() {
     });
 
     currentObjs.forEach(obj => {
-        if (obj.type === 'champion') renderDOM(obj, 'placed-object placed-champion');
+        if (obj.type === 'champion') {
+            const teamClass = obj.team ? `team-${obj.team}` : '';
+            renderDOM(obj, `placed-object placed-champion ${teamClass}`.trim());
+        }
         else if (obj.type === 'minion') {
             let shouldFlip = false;
             if (myTeamSide === 'blue') {
@@ -1623,6 +1788,58 @@ function renderObjects() {
         }
         else if (obj.type === 'ping' || obj.type === 'ward' || obj.type === 'object') renderDOM(obj, 'placed-object placed-icon');
         else if (obj.type === 'free_arrow') renderStartCtrl(obj);
+    });
+}
+
+function renderGhosts() {
+    mapEl.querySelectorAll('.ghost-champion').forEach(el => el.remove());
+    svgLayer.querySelectorAll('line.ghost-line').forEach(el => el.remove());
+
+    if (!showGhostChampions || currentStepIndex <= 0) return;
+
+    const prevObjs = timelineData[currentStepIndex - 1] || [];
+    const currentObjs = timelineData[currentStepIndex] || [];
+
+    currentObjs.forEach(obj => {
+        if (obj.type !== 'champion') return;
+        const prevObj = prevObjs.find(p => p.type === 'champion' && p.uid === obj.uid);
+        if (!prevObj) return;
+
+        const dist = Math.hypot(obj.x - prevObj.x, obj.y - prevObj.y);
+        if (dist <= 5) return;
+
+        // 1. 이동 궤적 점선
+        const ghostLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        ghostLine.setAttribute("class", "ghost-line");
+        ghostLine.setAttribute("data-ghost-uid", obj.uid);
+        ghostLine.setAttribute("x1", prevObj.x);
+        ghostLine.setAttribute("y1", prevObj.y);
+        ghostLine.setAttribute("x2", obj.x);
+        ghostLine.setAttribute("y2", obj.y);
+        const lineColor = obj.team === 'blue' ? 'rgba(68, 138, 255, 0.65)' : (obj.team === 'red' ? 'rgba(255, 82, 82, 0.65)' : 'rgba(255, 255, 255, 0.5)');
+        ghostLine.setAttribute("stroke", lineColor);
+        ghostLine.setAttribute("stroke-width", "2.5");
+        ghostLine.setAttribute("stroke-dasharray", "5,5");
+        ghostLine.setAttribute("stroke-linecap", "round");
+        svgLayer.insertBefore(ghostLine, svgLayer.firstChild);
+
+        // 2. 이전 위치 반투명 잔상 아이콘
+        const ghostEl = document.createElement('div');
+        const teamClass = obj.team ? `team-${obj.team}` : '';
+        ghostEl.className = `placed-object placed-champion ghost-champion ${teamClass}`.trim();
+        ghostEl.setAttribute('data-ghost-uid', obj.uid);
+        if (obj.champId && obj.champId !== "Poro") {
+            const imgUrl = obj.champId === "Locke" ? "images/Locke.png" : `https://ddragon.leagueoflegends.com/cdn/${currentVersion}/img/champion/${obj.champId}.png`;
+            ghostEl.style.backgroundImage = `url(${imgUrl})`;
+            ghostEl.style.backgroundSize = 'cover';
+        } else {
+            ghostEl.style.backgroundColor = '#ccc';
+        }
+        ghostEl.style.width = champIconSize + "px";
+        ghostEl.style.height = champIconSize + "px";
+        ghostEl.style.left = prevObj.x + "px";
+        ghostEl.style.top = prevObj.y + "px";
+        mapEl.appendChild(ghostEl);
     });
 }
 
@@ -1660,6 +1877,20 @@ function renderDOM(obj, className) {
 
     // [핵심] DOM 요소에 '현재 스텝의 데이터 객체'를 연결하여 최신 상태 유지
     el._dataObj = obj;
+
+    if (obj.type === 'champion') {
+        el.classList.toggle('team-blue', obj.team === 'blue');
+        el.classList.toggle('team-red', obj.team === 'red');
+    }
+
+    if (obj.type === 'minion') {
+        const shouldFlip = myTeamSide === 'blue'
+            ? (obj.minionType === 'minion-blue')
+            : (obj.minionType === 'minion-red');
+        el.classList.toggle('flip-dir', shouldFlip);
+        el.classList.toggle('minion-red-glow', obj.minionType === 'minion-red');
+        el.classList.toggle('minion-blue-glow', obj.minionType !== 'minion-red');
+    }
 
     // 선택 상태 클래스 처리
     if (obj.uid === selectedObjUid) {
@@ -1764,10 +1995,12 @@ function drop(ev) {
     let modified = false;
 
     if (dragType === "new-champion") {
+        const inferredTeam = team || (bluePreset.includes(champId) ? 'blue' : (redPreset.includes(champId) ? 'red' : undefined));
         timelineData[currentStepIndex].push({
             type: 'champion',
             uid: "champ_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5),
             champId: champId,
+            team: inferredTeam,
             x: x, y: y,
             arrow: { hasArrow: false, dx: 0, dy: 0 }
         });
@@ -1807,7 +2040,7 @@ function drop(ev) {
         const list = team === 'blue' ? bluePreset : redPreset;
         
         if (list.length === 0) {
-            alert("프리셋에 등록된 챔피언이 없습니다.");
+            showToast("⚠️ 프리셋에 등록된 챔피언이 없습니다.");
             return;
         }
         
@@ -1823,11 +2056,13 @@ function drop(ev) {
             if (existing) {
                 existing.x = targetX;
                 existing.y = targetY;
+                existing.team = team;
             } else {
                 currentObjs.push({
                     type: 'champion',
                     uid: champUid,
                     champId: champKey,
+                    team: team,
                     x: targetX, y: targetY,
                     arrow: { hasArrow: false, dx: 0, dy: 0 }
                 });
@@ -1850,7 +2085,7 @@ function renderArrows() {
     const currentObjs = timelineData[currentStepIndex];
     const activeUids = currentObjs.filter(o => o.arrow && o.arrow.hasArrow).map(o => o.uid);
     
-    svgLayer.querySelectorAll('line').forEach(l => {
+    svgLayer.querySelectorAll('line:not(.ghost-line)').forEach(l => {
         if(!activeUids.includes(l.getAttribute('data-uid'))) l.remove();
     });
     mapEl.querySelectorAll('.arrow-control.end').forEach(c => {
@@ -2028,6 +2263,23 @@ document.addEventListener('keydown', (e) => {
     if (e.code === 'ArrowRight') {
         e.preventDefault();
         nextStep();
+    }
+
+    // 도구 단축키 (1: 펜, 2: 화살표, 3: 지우개, C: 선만 지우기)
+    if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (e.code === 'Digit1') {
+            e.preventDefault();
+            setDrawingTool('pen');
+        } else if (e.code === 'Digit2') {
+            e.preventDefault();
+            setDrawingTool('arrow');
+        } else if (e.code === 'Digit3') {
+            e.preventDefault();
+            setDrawingTool('eraser');
+        } else if (e.code === 'KeyC') {
+            e.preventDefault();
+            clearDrawingsInCurrentStep();
+        }
     }
 });
 
@@ -2231,13 +2483,21 @@ function spawnAllCamps() {
     
     renderScene();
     recordHistory();
-    alert(`총 ${newCamps.length}개의 정글 몬스터가 일괄 젠되었습니다!`);
+    showToast(`🌲 총 ${newCamps.length}개의 정글 몬스터가 일괄 젠되었습니다.`);
 }
 
 let isSyncScheduled = false;
+let pendingForceBgSync = false;
+let lastSyncedScreenshotId = undefined;
+let screenshotsCache = null;
 
-function syncObsScene(immediate = false) {
+function syncObsScene(immediate = false, forceBgSync = false) {
+    if (forceBgSync) pendingForceBgSync = true;
+
     const runSync = () => {
+        const shouldForceBg = forceBgSync || pendingForceBgSync;
+        pendingForceBgSync = false;
+
         const mapArea = document.getElementById('map-area');
         let viewportData = null;
         
@@ -2269,6 +2529,14 @@ function syncObsScene(immediate = false) {
                 mapCenterY: mapCenterY
             };
         }
+
+        let activeScreenshotDataUrl = undefined;
+        if (shouldForceBg || selectedScreenshotId !== lastSyncedScreenshotId) {
+            const list = getScreenshotsFromStorage();
+            const activeScr = list.find(s => s.id === selectedScreenshotId);
+            activeScreenshotDataUrl = activeScr ? activeScr.dataUrl : null;
+            lastSyncedScreenshotId = selectedScreenshotId;
+        }
         
         sendToObs({
             type: 'sync-scene',
@@ -2277,11 +2545,13 @@ function syncObsScene(immediate = false) {
             myTeamSide: myTeamSide,
             zoomLevel: zoomLevel,
             champIconSize: champIconSize,
+            minionIconSize: minionIconSize,
             currentVersion: currentVersion,
             viewport: viewportData,
             currentMode: currentMode,
             selectedScreenshotId: selectedScreenshotId,
-            screenshots: getScreenshotsFromStorage()
+            activeScreenshotDataUrl: activeScreenshotDataUrl,
+            showGhostChampions: showGhostChampions
         });
     };
 
@@ -2298,7 +2568,6 @@ function syncObsScene(immediate = false) {
 }
 
 function syncObsViewport() {
-    console.log("[syncObsViewport] 호출됨, zoomLevel:", zoomLevel);
     const mapArea = document.getElementById('map-area');
     let viewportData = null;
     
@@ -2353,20 +2622,27 @@ function copyObsUrl() {
 
 // --- 스크린샷 모드 관련 기능 ---
 function getScreenshotsFromStorage() {
+    if (screenshotsCache !== null) {
+        return screenshotsCache;
+    }
     const data = localStorage.getItem('lol_strategy_screenshots');
     if (data) {
         try {
-            return JSON.parse(data);
+            screenshotsCache = JSON.parse(data);
+            return screenshotsCache;
         } catch(e) {
+            screenshotsCache = [];
             return [];
         }
     }
+    screenshotsCache = [];
     return [];
 }
 
 function saveScreenshotsToStorage(list) {
     try {
         localStorage.setItem('lol_strategy_screenshots', JSON.stringify(list));
+        screenshotsCache = list;
         return true;
     } catch(e) {
         alert("브라우저 저장 용량이 부족하여 스크린샷을 저장할 수 없습니다.\n기존 스크린샷을 삭제한 후 다시 시도해 주세요.");
@@ -2405,6 +2681,12 @@ function setAppMode(mode) {
         if (mapEl) {
             mapEl.style.backgroundImage = 'url("images/Summoner\'s_Rift_map_s14.png")';
             mapEl.style.backgroundColor = 'transparent';
+        }
+
+        // 협곡 모드 복귀 시 스크린샷 탭에 머물러 있다면 챔피언 탭으로 자동 복귀
+        const activeTab = document.querySelector('#sidebar-left .sidebar-tabs .tab-btn.active');
+        if (activeTab && activeTab.id === 'tab-btn-screenshots') {
+            switchLeftTab('champs');
         }
     } else {
         // 스크린샷 모드 활성화 스타일
@@ -2445,12 +2727,17 @@ function setAppMode(mode) {
             switchLeftTab('screenshots');
         }
     }
+
+    if (typeof syncObsScene === 'function') {
+        syncObsScene();
+    }
 }
 
 function handleScreenshotPaste(e) {
-    if (currentMode !== 'screenshot') return;
-    
-    const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+    const clipboardData = e.clipboardData || (e.originalEvent && e.originalEvent.clipboardData);
+    if (!clipboardData || !clipboardData.items) return;
+
+    const items = clipboardData.items;
     for (let i = 0; i < items.length; i++) {
         const item = items[i];
         if (item.kind === 'file' && item.type.indexOf('image') !== -1) {
@@ -2603,6 +2890,31 @@ function renderScreenshots() {
     });
 }
 
+function resolveChampionKey(item) {
+    if (!item) return null;
+    const rawKey = typeof item === 'string' ? item : item.id;
+    const rawName = typeof item === 'string' ? item : item.name;
+
+    if (rawKey && championData[rawKey]) return rawKey;
+    if (rawName && championData[rawName]) return rawName;
+
+    const entries = Object.entries(championData);
+    if (rawKey != null) {
+        const keyStr = String(rawKey);
+        const byNumKey = entries.find(([, c]) => String(c.key) === keyStr);
+        if (byNumKey) return byNumKey[0];
+    }
+    if (rawName) {
+        const cleanTarget = String(rawName).replace(/\s+/g, '').toLowerCase();
+        const byName = entries.find(([k, c]) =>
+            k.toLowerCase() === cleanTarget ||
+            (c.name && c.name.replace(/\s+/g, '').toLowerCase() === cleanTarget)
+        );
+        if (byName) return byName[0];
+    }
+    return null;
+}
+
 function checkAndApplyImportedChampions() {
     try {
         const saved = localStorage.getItem('gudo_imported_champions');
@@ -2611,11 +2923,14 @@ function checkAndApplyImportedChampions() {
         const teamChamps = imported.teamChamps || [];
 
         if (teamChamps.length > 0) {
-            bluePreset = teamChamps.slice(0, 5).map(c => c.name);
-            redPreset = teamChamps.slice(5, 10).map(c => c.name);
+            bluePreset = teamChamps.slice(0, 5).map(resolveChampionKey).filter(Boolean);
+            redPreset = teamChamps.slice(5, 10).map(resolveChampionKey).filter(Boolean);
 
             if (typeof renderPresetLists === 'function') {
                 renderPresetLists();
+            }
+            if (typeof renderPresets === 'function') {
+                renderPresets();
             }
             console.log("⚡ FOW 파싱 10명 챔피언 라인업 전략 보드 세팅 완료:", bluePreset, redPreset);
         }
@@ -2631,17 +2946,17 @@ function toggleMobileSidebar(side) {
     const rightPanel = document.getElementById('right-panel-wrapper');
     const overlay = document.getElementById('sidebar-overlay');
 
-    if (side === 'left') {
-        const isOpening = !leftSidebar.classList.contains('open');
-        if (rightPanel) rightPanel.classList.remove('open');
-        if (leftSidebar) leftSidebar.classList.toggle('open', isOpening);
-        if (overlay) overlay.classList.toggle('open', isOpening);
-    } else if (side === 'right') {
-        const isOpening = !rightPanel.classList.contains('open');
-        if (leftSidebar) leftSidebar.classList.remove('open');
-        if (rightPanel) rightPanel.classList.toggle('open', isOpening);
-        if (overlay) overlay.classList.toggle('open', isOpening);
-    }
+    const target = side === 'left' ? leftSidebar : rightPanel;
+    const other = side === 'left' ? rightPanel : leftSidebar;
+    if (!target) return;
+
+    // 드로어를 여닫을 때 햄버거 드롭다운은 항상 닫아 z-index 충돌 방지
+    closeMobileDropdown();
+
+    const isOpening = !target.classList.contains('open');
+    if (other) other.classList.remove('open');
+    target.classList.toggle('open', isOpening);
+    if (overlay) overlay.classList.toggle('open', isOpening);
 }
 
 function closeMobileSidebars() {
@@ -2652,6 +2967,9 @@ function closeMobileSidebars() {
     if (leftSidebar) leftSidebar.classList.remove('open');
     if (rightPanel) rightPanel.classList.remove('open');
     if (overlay) overlay.classList.remove('open');
+
+    // 오버레이 탭 한 번으로 드롭다운까지 함께 정리
+    closeMobileDropdown();
 }
 
 // 🍔 모바일 햄버거 슬라이드 다운 드롭다운 메뉴 제어 함수
@@ -2661,6 +2979,17 @@ function toggleMobileDropdown() {
     if (!dropdown) return;
 
     const isOpening = !dropdown.classList.contains('open');
+
+    // 드롭다운을 열 때 열려있는 사이드바 드로어와 오버레이를 먼저 정리
+    if (isOpening) {
+        const leftSidebar = document.getElementById('sidebar-left');
+        const rightPanel = document.getElementById('right-panel-wrapper');
+        const overlay = document.getElementById('sidebar-overlay');
+        if (leftSidebar) leftSidebar.classList.remove('open');
+        if (rightPanel) rightPanel.classList.remove('open');
+        if (overlay) overlay.classList.remove('open');
+    }
+
     dropdown.classList.toggle('open', isOpening);
     if (btn) btn.classList.toggle('open', isOpening);
 }
@@ -2672,15 +3001,35 @@ function closeMobileDropdown() {
     if (btn) btn.classList.remove('open');
 }
 
+// 🔻 드롭다운 바깥(맵 포함)을 누르면 자동으로 닫기
+// 맵의 touchstart 가 preventDefault 를 걸기 전에 처리되도록 pointerdown 캡처 단계에서 감지
+document.addEventListener('pointerdown', (e) => {
+    const dropdown = document.getElementById('mobile-dropdown-menu');
+    if (!dropdown || !dropdown.classList.contains('open')) return;
+    const target = e.target;
+    if (!target || typeof target.closest !== 'function') return;
+    if (target.closest('#mobile-dropdown-menu') || target.closest('#mobile-hamburger-btn')) return;
+    closeMobileDropdown();
+}, true);
+
 // 📱 모바일 디바이스 접속 시 화면 폭에 맞춘 초기 맵 자동 피팅
 function autoFitMobileMap() {
-    if (window.innerWidth <= 768) {
-        const mapArea = document.getElementById('map-area');
-        if (!mapArea) return;
-        const availableWidth = mapArea.clientWidth || (window.innerWidth - 10);
-        const fitZoom = Math.max(MIN_ZOOM, Math.min(1.0, availableWidth / MAP_BASE_WIDTH));
-        zoomLevel = parseFloat(fitZoom.toFixed(2));
-        applyZoom();
+    if (window.innerWidth > 768) return;
+
+    const mapArea = document.getElementById('map-area');
+    if (!mapArea) return;
+
+    const availableWidth = mapArea.clientWidth || (window.innerWidth - 10);
+    const fitZoom = Math.max(MIN_ZOOM, Math.min(1.0, availableWidth / MAP_BASE_WIDTH));
+    zoomLevel = parseFloat(fitZoom.toFixed(2));
+    applyZoom();
+
+    // 재맞춤 후 남아있던 스크롤 오프셋 제거 (resetZoom 과 동일 처리)
+    mapArea.scrollLeft = 0;
+    mapArea.scrollTop = 0;
+
+    if (typeof syncObsViewport === 'function') {
+        syncObsViewport();
     }
 }
 
@@ -2690,102 +3039,168 @@ function bindTouchEvents() {
     const mapEl = document.getElementById('rift-map');
     if (!mapArea || !mapEl) return;
 
+    // 이 이하로 움직이면 탭(선택)으로 간주하여 click 을 대신 발생시킨다
+    const TAP_THRESHOLD = 8;
+
     let initialPinchDist = 0;
     let initialZoom = 1.0;
+    let pinchMidX = 0;
+    let pinchMidY = 0;
+    let isPinching = false;
+
+    let isTouchDragging = false;      // 합성 mousedown 을 실제로 보낸 상태인지
+    let touchDragTarget = null;
     let touchStartX = 0;
     let touchStartY = 0;
-    let touchScrollLeft = 0;
-    let touchScrollTop = 0;
-    let isTouchPanning = false;
+    let touchMovedDist = 0;
+    let suppressUntilRelease = false; // 핀치가 1손가락으로 무너진 뒤 오작동 방지
+
+    const dispatchMouse = (type, target, clientX, clientY) => {
+        target.dispatchEvent(new MouseEvent(type, {
+            clientX: clientX,
+            clientY: clientY,
+            button: 0,
+            bubbles: true,
+            cancelable: true
+        }));
+    };
+
+    // 합성 mousedown 을 보냈을 때만 mouseup 을 짝지어 보낸다 (툴바 등 무관한 터치에는 무반응)
+    const endTouchDrag = (clientX, clientY) => {
+        if (!isTouchDragging) return;
+        isTouchDragging = false;
+
+        dispatchMouse('mouseup', window, clientX, clientY);
+
+        // 거의 움직이지 않았다면 탭 → click 을 보내 선(stroke)/화살표 선택 동작 보존
+        if (touchMovedDist < TAP_THRESHOLD && touchDragTarget) {
+            dispatchMouse('click', touchDragTarget, clientX, clientY);
+        }
+        touchDragTarget = null;
+    };
+
+    const beginPinch = (touches) => {
+        const t1 = touches[0];
+        const t2 = touches[1];
+        initialPinchDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+        initialZoom = zoomLevel;
+        pinchMidX = (t1.clientX + t2.clientX) / 2;
+        pinchMidY = (t1.clientY + t2.clientY) / 2;
+        isPinching = true;
+    };
 
     mapEl.addEventListener('touchstart', (e) => {
-        if (e.touches.length === 2) {
-            // ✌️ 2손가락 핀치 줌 (Pinch-to-zoom)
-            isTouchPanning = false;
-            const t1 = e.touches[0];
-            const t2 = e.touches[1];
-            initialPinchDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-            initialZoom = zoomLevel;
-        } else if (e.touches.length === 1) {
-            const touch = e.touches[0];
-            const targetEl = touch.target;
-            const isPlacedObj = targetEl.closest('.placed-object') || targetEl.closest('.arrow-control');
-            
-            if (isPlacedObj || isDrawing) {
-                // 👆 배치된 아이콘 드래그 또는 펜 그리기 시
-                isTouchPanning = false;
-                const mouseEvt = new MouseEvent('mousedown', {
-                    clientX: touch.clientX,
-                    clientY: touch.clientY,
-                    button: 0,
-                    bubbles: true
-                });
-                targetEl.dispatchEvent(mouseEvt);
-            } else {
-                // 🖐️ 배경 1손가락 터치 드래그 맵 스크롤(패닝)
-                isTouchPanning = true;
-                touchStartX = touch.clientX;
-                touchStartY = touch.clientY;
-                touchScrollLeft = mapArea.scrollLeft;
-                touchScrollTop = mapArea.scrollTop;
-            }
+        if (e.touches.length >= 2) {
+            // ✌️ 2손가락: 진행 중이던 1손가락 드래그를 정리한 뒤 핀치 줌/패닝 시작
+            const t = e.changedTouches[0];
+            endTouchDrag(t ? t.clientX : touchStartX, t ? t.clientY : touchStartY);
+            e.preventDefault();
+            beginPinch(e.touches);
+            return;
         }
+
+        if (isPinching || suppressUntilRelease) return;
+
+        // 👆 1손가락: 오브젝트 드래그와 배경 그리기 모두 마우스 경로로 위임한다.
+        // preventDefault 로 브라우저 호환 마우스 이벤트(중복 실행)와 네이티브 스크롤을 함께 차단
+        e.preventDefault();
+
+        const touch = e.touches[0];
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+        touchMovedDist = 0;
+        touchDragTarget = touch.target;
+        isTouchDragging = true;
+        dispatchMouse('mousedown', touch.target, touch.clientX, touch.clientY);
     }, { passive: false });
 
     window.addEventListener('touchmove', (e) => {
-        if (e.touches.length === 2 && initialPinchDist > 0) {
-            // ✌️ 핀치 줌 계산
+        if (isPinching && e.touches.length >= 2 && initialPinchDist > 0) {
             e.preventDefault();
+
             const t1 = e.touches[0];
             const t2 = e.touches[1];
             const currentDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-            const scale = currentDist / initialPinchDist;
-            const targetZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, initialZoom * scale));
-            
+            const midX = (t1.clientX + t2.clientX) / 2;
+            const midY = (t1.clientY + t2.clientY) / 2;
+
+            // 🖐️ 먼저 2손가락 중점 이동량만큼 맵 패닝
+            const movedX = midX - pinchMidX;
+            const movedY = midY - pinchMidY;
+            mapArea.scrollLeft -= movedX;
+            mapArea.scrollTop -= movedY;
+            pinchMidX = midX;
+            pinchMidY = midY;
+
+            // ✌️ 그 다음 핀치 중점을 앵커로 줌 (zoomToPoint 가 스크롤 보정 + OBS 동기화까지 수행)
+            const targetZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, initialZoom * (currentDist / initialPinchDist)));
             if (Math.abs(targetZoom - zoomLevel) > 0.01) {
-                zoomLevel = parseFloat(targetZoom.toFixed(2));
-                applyZoom();
+                zoomToPoint(parseFloat(targetZoom.toFixed(2)), midX, midY);
+            } else if ((movedX || movedY) && typeof syncObsViewport === 'function') {
+                syncObsViewport();
             }
-        } else if (e.touches.length === 1) {
+            return;
+        }
+
+        if (isTouchDragging && e.touches.length === 1) {
+            e.preventDefault();
             const touch = e.touches[0];
-            if (isTouchPanning) {
-                // 🖐️ 부드러운 1손가락 터치 패닝 스크롤
-                e.preventDefault();
-                const deltaX = touch.clientX - touchStartX;
-                const deltaY = touch.clientY - touchStartY;
-                mapArea.scrollLeft = touchScrollLeft - deltaX;
-                mapArea.scrollTop = touchScrollTop - deltaY;
-                if (typeof syncObsViewport === 'function') syncObsViewport();
-            } else {
-                // 👆 1손가락 터치 이동
-                const mouseEvt = new MouseEvent('mousemove', {
-                    clientX: touch.clientX,
-                    clientY: touch.clientY,
-                    button: 0,
-                    bubbles: true
-                });
-                window.dispatchEvent(mouseEvt);
-            }
+            touchMovedDist = Math.max(
+                touchMovedDist,
+                Math.hypot(touch.clientX - touchStartX, touch.clientY - touchStartY)
+            );
+            dispatchMouse('mousemove', window, touch.clientX, touch.clientY);
         }
     }, { passive: false });
 
-    window.addEventListener('touchend', (e) => {
-        initialPinchDist = 0;
-        isTouchPanning = false;
-        const mouseEvt = new MouseEvent('mouseup', {
-            button: 0,
-            bubbles: true
-        });
-        window.dispatchEvent(mouseEvt);
-    });
+    // 남은 손가락 수를 확인한 뒤에만 상태를 정리한다
+    const handleTouchEnd = (e) => {
+        const remaining = e.touches.length;
+        const t = e.changedTouches[0];
+        const clientX = t ? t.clientX : touchStartX;
+        const clientY = t ? t.clientY : touchStartY;
 
-    window.addEventListener('resize', autoFitMobileMap);
+        if (remaining >= 2) {
+            // 아직 2손가락 이상이면 기준점만 다시 잡고 핀치를 유지
+            if (isPinching) beginPinch(e.touches);
+            return;
+        }
+
+        if (remaining === 1) {
+            if (isPinching) {
+                // 핀치 도중 한 손가락만 뗀 경우: 남은 손가락이 오작동하지 않도록 봉인
+                isPinching = false;
+                initialPinchDist = 0;
+                suppressUntilRelease = true;
+            }
+            return;
+        }
+
+        // 모든 손가락이 떨어진 시점에만 드래그 종료 및 전체 상태 초기화
+        endTouchDrag(clientX, clientY);
+        isPinching = false;
+        initialPinchDist = 0;
+        suppressUntilRelease = false;
+    };
+
+    window.addEventListener('touchend', handleTouchEnd);
+    window.addEventListener('touchcancel', handleTouchEnd);
+
+    // 📱 화면 폭이 실제로 바뀐 경우에만 재맞춤한다.
+    // 소프트 키보드 오픈 / URL 바 접힘처럼 높이만 변하는 resize 는 무시하여 사용자 줌을 보존
+    let lastFitWidth = window.innerWidth;
+    let resizeFitTimer = null;
+    window.addEventListener('resize', () => {
+        if (window.innerWidth === lastFitWidth) return;
+        lastFitWidth = window.innerWidth;
+        clearTimeout(resizeFitTimer);
+        resizeFitTimer = setTimeout(autoFitMobileMap, 150);
+    });
 }
 
 init();
 bindTouchEvents();
 setTimeout(() => {
     autoFitMobileMap();
-    checkAndApplyImportedChampions();
 }, 200);
 
