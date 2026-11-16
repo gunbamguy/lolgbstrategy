@@ -85,9 +85,10 @@
             </div>
 
             <div class="toolbar-group" style="border-left: 1px solid #444; padding-left: 10px;">
-                <button id="tool-pen" class="tool-btn active" onclick="setDrawingTool('pen')" title="자유 곡선 그리기 (단축키: 1)">✏️ 펜</button>
-                <button id="tool-arrow" class="tool-btn" onclick="setDrawingTool('arrow')" title="화살표 그리기 (단축키: 2)">↗ 화살표</button>
-                <button id="tool-eraser" class="tool-btn" onclick="setDrawingTool('eraser')" title="그려진 선 지우기 (단축키: 3)">🧼 지우개</button>
+                <button id="tool-select" class="tool-btn" onclick="setDrawingTool('select')" title="객체 선택 및 이동 모드 (단축키: 1)">👆 선택</button>
+                <button id="tool-pen" class="tool-btn active" onclick="setDrawingTool('pen')" title="자유 곡선 그리기 (단축키: 2)">✏️ 펜</button>
+                <button id="tool-arrow" class="tool-btn" onclick="setDrawingTool('arrow')" title="화살표 그리기 (단축키: 3)">↗ 화살표</button>
+                <button id="tool-eraser" class="tool-btn" onclick="setDrawingTool('eraser')" title="그려진 선 지우기 (단축키: 4)">🧼 지우개</button>
                 <button class="tool-btn" onclick="clearDrawingsInCurrentStep()" title="챔피언/오브젝트는 유지하고 현재 스텝의 선과 화살표만 모두 지웁니다 (단축키: C)">🧹 선만 지우기</button>
             </div>
 
@@ -112,7 +113,7 @@
             </div>
 
             <div class="toolbar-group desktop-only-group" style="border-left: 1px solid #444; padding-left: 10px; color: #aaa; font-size: 0.85em; gap: 5px;">
-                <span>단축키: <kbd style="background:#444; padding:2px 4px; border-radius:3px;">1~3</kbd> 도구 | <kbd style="background:#444; padding:2px 4px; border-radius:3px;">C</kbd> 선지우기 | <kbd style="background:#444; padding:2px 4px; border-radius:3px;">←/→</kbd> 스텝 | <kbd style="background:#444; padding:2px 4px; border-radius:3px;">Del</kbd> 삭제</span>
+                <span>단축키: <kbd style="background:#444; padding:2px 4px; border-radius:3px;">1~4</kbd> 도구 | <kbd style="background:#444; padding:2px 4px; border-radius:3px;">C</kbd> 선지우기 | <kbd style="background:#444; padding:2px 4px; border-radius:3px;">←/→</kbd> 스텝 | <kbd style="background:#444; padding:2px 4px; border-radius:3px;">Del</kbd> 삭제</span>
             </div>
             
             <div class="toolbar-group" style="border-left: 1px solid #444; padding-left: 10px;">
@@ -142,8 +143,9 @@
             </div>
 
             <div class="mobile-menu-section">
-                <div class="menu-label">✏️ 그리기 도구 선택</div>
+                <div class="menu-label">✏️ 도구 선택</div>
                 <div class="menu-row">
+                    <button class="mobile-menu-btn" data-tool="select" onclick="setDrawingTool('select'); closeMobileDropdown();">👆 선택</button>
                     <button class="mobile-menu-btn active" data-tool="pen" onclick="setDrawingTool('pen'); closeMobileDropdown();">✏️ 펜</button>
                     <button class="mobile-menu-btn" data-tool="arrow" onclick="setDrawingTool('arrow'); closeMobileDropdown();">↗ 화살표</button>
                     <button class="mobile-menu-btn" data-tool="eraser" onclick="setDrawingTool('eraser'); closeMobileDropdown();">🧼 지우개</button>
@@ -166,6 +168,18 @@
                         <button class="width-btn" data-width="6" onclick="setPenWidth(6); closeMobileDropdown();" style="background: #333; color: white; border: 1px solid #444; padding: 4px 8px; border-radius: 4px; font-size: 11px;">6px</button>
                         <button class="width-btn" data-width="8" onclick="setPenWidth(8); closeMobileDropdown();" style="background: #333; color: white; border: 1px solid #444; padding: 4px 8px; border-radius: 4px; font-size: 11px;">8px</button>
                     </div>
+                </div>
+            </div>
+
+            <div class="mobile-menu-section">
+                <div class="menu-label">📋 전술 관리</div>
+                <div class="menu-row">
+                    <select id="mobile-tactic-select" class="tactic-select" style="flex: 1; min-width: 140px;" onchange="onTacticSelectChange(this.value); closeMobileDropdown();">
+                        <option value="">📋 전술 선택...</option>
+                    </select>
+                    <button class="mobile-menu-btn" onclick="saveNewTacticFromToolbar(); closeMobileDropdown();">💾 저장</button>
+                    <button id="mobile-tactic-update-btn" class="mobile-menu-btn" onclick="updateSelectedTactic(true); closeMobileDropdown();" disabled>✏️ 수정</button>
+                    <button id="mobile-tactic-delete-btn" class="mobile-menu-btn" onclick="deleteSelectedTactic(); closeMobileDropdown();" disabled>🗑️ 삭제</button>
                 </div>
             </div>
 
@@ -193,7 +207,7 @@
                     <svg id="svg-layer" viewBox="0 0 1203.3 800" width="1203.3" height="800">
                         <defs>
                             <marker id="arrowhead" markerWidth="7" markerHeight="5" refX="5.5" refY="2.5" orient="auto">
-                                <path d="M0,0.5 L7,2.5 L0,4.5 L2,2.5 Z" fill="#ff5252" />
+                                <polygon points="0,0.5 7,2.5 0,4.5 2,2.5" fill="#ff5252" />
                             </marker>
                         </defs>
                     </svg>
@@ -246,6 +260,22 @@
 
                 <h3 class="section-title">Smart Pings</h3>
                 <div class="item-grid" id="tacticsList"></div>
+
+                <!-- 📋 전술페이지 섹션 (팀 / 핑 하단 통합) -->
+                <div id="tactics-section" class="tactics-section-box">
+                    <div class="tactics-section-header">
+                        <span>📋 전술 페이지</span>
+                        <span id="saved-tactics-count" class="tactics-count-badge">0개</span>
+                    </div>
+                    <select id="sidebar-tactic-select" class="tactic-select" style="width: 100%; max-width: none;" onchange="onTacticSelectChange(this.value)">
+                        <option value="">📋 저장된 전술 선택...</option>
+                    </select>
+                    <div style="display: flex; gap: 6px;">
+                        <button class="control-btn btn-green" onclick="saveNewTacticFromToolbar()" style="flex: 1; padding: 7px 0; font-size: 12px;" title="현재 보드 상태를 새 전술로 저장">💾 저장</button>
+                        <button id="sidebar-tactic-update-btn" class="control-btn btn-blue" onclick="updateSelectedTactic(true)" style="flex: 1; padding: 7px 0; font-size: 12px;" title="선택된 전술에 현재 보드 상태 및 이름 수정 덮어쓰기" disabled>✏️ 수정</button>
+                        <button id="sidebar-tactic-delete-btn" class="control-btn btn-red" onclick="deleteSelectedTactic()" style="flex: 1; padding: 7px 0; font-size: 12px;" title="선택된 전술 삭제" disabled>🗑️ 삭제</button>
+                    </div>
+                </div>
             </div>
 
             <!-- 오브젝트 탭 콘텐츠 -->
@@ -348,7 +378,7 @@
                 <div class="help-section">
                     <h3>⌨️ 단축키</h3>
                     <ul>
-                        <li><kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd> : ✏️ 펜 / ↗ 화살표 / 🧼 지우개 도구 즉시 전환</li>
+                        <li><kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd> / <kbd>4</kbd> : 👆 선택 / ✏️ 펜 / ↗ 화살표 / 🧼 지우개 도구 즉시 전환</li>
                         <li><kbd>C</kbd> : 챔피언/오브젝트는 남기고 현재 스텝의 선과 화살표만 지우기</li>
                         <li><kbd>←</kbd> / <kbd>→</kbd> : 이전 / 다음 스텝 이동</li>
                         <li><kbd>Del</kbd> / <kbd>Backspace</kbd> : 선택된 객체 삭제</li>

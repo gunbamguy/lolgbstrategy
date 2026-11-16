@@ -302,6 +302,8 @@ function renderDOM(obj, className) {
         el.classList.toggle('minion-blue-glow', obj.minionType !== 'minion-red');
     }
 
+    el.classList.toggle('dimmed', Boolean(obj.dimmed));
+
     // 크기 설정
     const baseSize = obj.type === 'champion' ? champIconSize : minionIconSize;
     el.style.width = baseSize + "px";
@@ -403,7 +405,7 @@ function renderStrokes() {
     const strokeObjs = currentObjs.filter(o => o.type === 'pen_stroke');
     const activeStrokeUids = strokeObjs.map(o => o.uid);
     
-    svgLayer.querySelectorAll('path').forEach(p => {
+    svgLayer.querySelectorAll('path[data-uid]').forEach(p => {
         const uid = p.getAttribute('data-uid');
         if (uid && !activeStrokeUids.includes(uid)) p.remove();
     });

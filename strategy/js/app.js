@@ -112,6 +112,8 @@ let selectedObjUid = null;
 let selectedChampKey = null;
 let bluePreset = [];
 let redPreset = [];
+let currentTacticId = null;
+const TACTICS_STORAGE_KEY = 'lol_strategy_saved_tactics';
 let contextTargetUid = null;
 let draggedObj = null;
 let draggedEl = null;
@@ -303,6 +305,7 @@ async function init() {
             });
         }
         renderScreenshots();
+        renderTacticsUI();
         setAppMode('map'); // 기본 앱 모드는 맵 모드
     } catch (e) { console.error(e); }
 }
@@ -380,6 +383,7 @@ function bindZoomAndPanEvents() {
     // 마우스 드래그 패닝(Panning), 화살표 그리기(Drawing) 및 커스텀 드래그
     let isPanning = false;
     let isPanningReady = false;
+    let hasDraggedMoved = false;
     let startX, startY, scrollLeft, scrollTop;
 
     mapEl.addEventListener('mousedown', (e) => {
@@ -397,6 +401,7 @@ function bindZoomAndPanEvents() {
                 draggedEl = placedObjEl;
                 draggedObj = placedObjEl._dataObj;
                 dragType = 'object';
+                hasDraggedMoved = false;
                 
                 selectedObjUid = draggedObj.uid;
                 draggedEl.classList.add('selected');
@@ -417,6 +422,7 @@ function bindZoomAndPanEvents() {
                 draggedEl = arrowCtrlEl;
                 draggedObj = arrowCtrlEl._dataObj;
                 dragType = arrowCtrlEl.classList.contains('start') ? 'arrow-start' : 'arrow-end';
+                hasDraggedMoved = false;
                 
                 selectedObjUid = draggedObj.uid;
                 draggedEl.classList.add('selected');
@@ -433,9 +439,17 @@ function bindZoomAndPanEvents() {
                 return;
             }
 
-            // 빈 배경이면 그리기 시작
+            // 빈 배경이면 그리기 또는 선택 모드 분기
             const isMapBg = e.target === mapArea || e.target === mapEl || e.target === structureLayer || e.target === svgLayer || e.target.tagName === 'path' || e.target.tagName === 'line' || e.target.closest('path') || e.target.closest('line');
             if (isMapBg) {
+                if (activeTool === 'select') {
+                    const isDrawableEl = e.target.tagName === 'path' || e.target.tagName === 'line' || e.target.closest('path') || e.target.closest('line');
+                    if (!isDrawableEl) {
+                        clearSelection();
+                    }
+                    return;
+                }
+
                 e.preventDefault();
                 e.stopPropagation();
                 clearSelection();
@@ -534,6 +548,12 @@ function bindZoomAndPanEvents() {
             const borderOffset = 2 * zoomLevel;
             const cx = Math.min(MAP_BASE_WIDTH, Math.max(0, (e.clientX - mapRect.left - borderOffset) / zoomLevel));
             const cy = Math.min(MAP_BASE_HEIGHT, Math.max(0, (e.clientY - mapRect.top - borderOffset) / zoomLevel));
+
+            const baseX = dragType === 'arrow-end' ? (draggedObj.x + draggedObj.arrow.dx) : draggedObj.x;
+            const baseY = dragType === 'arrow-end' ? (draggedObj.y + draggedObj.arrow.dy) : draggedObj.y;
+            if (Math.abs(cx - baseX) > 0.5 || Math.abs(cy - baseY) > 0.5) {
+                hasDraggedMoved = true;
+            }
             
             if (dragType === 'object') {
                 draggedObj.x = cx;
@@ -652,7 +672,10 @@ function bindZoomAndPanEvents() {
             dragType = null;
             
             renderScene();
-            recordHistory();
+            if (hasDraggedMoved) {
+                recordHistory();
+                hasDraggedMoved = false;
+            }
             return;
         }
 
@@ -1155,6 +1178,219 @@ function switchRightTab(tabId) {
     document.getElementById('tab-content-obs').style.display = tabId === 'obs' ? 'block' : 'none';
 }
 
+// ==========================================================================
+// 📋 전술페이지 (Tactics) 저장 / 불러오기(드롭다운) / 수정 / 삭제
+// ==========================================================================
+
+function getSavedTacticsFromStorage() {
+    const data = localStorage.getItem(TACTICS_STORAGE_KEY);
+    if (!data) return [];
+    try {
+        const parsed = JSON.parse(data);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function saveTacticsToStorage(tactics) {
+    try {
+        localStorage.setItem(TACTICS_STORAGE_KEY, JSON.stringify(tactics));
+        return true;
+    } catch (e) {
+        showToast('⚠️ 브라우저 저장 용량이 부족해 전술을 저장할 수 없습니다.');
+        return false;
+    }
+}
+
+function createCurrentBoardSnapshot() {
+    return {
+        timelineData: JSON.parse(JSON.stringify(timelineData || [ [] ])),
+        currentStepIndex: currentStepIndex,
+        myTeamSide: myTeamSide,
+        bluePreset: JSON.parse(JSON.stringify(bluePreset || [])),
+        redPreset: JSON.parse(JSON.stringify(redPreset || [])),
+        currentMode: currentMode,
+        selectedScreenshotId: selectedScreenshotId
+    };
+}
+
+function applyBoardSnapshot(tactic) {
+    triggerStepAnimation();
+    mapEl.querySelectorAll('.placed-object, .arrow-control').forEach(el => el.remove());
+    svgLayer.querySelectorAll('line, path[data-uid]').forEach(l => l.remove());
+
+    timelineData = JSON.parse(JSON.stringify(
+        Array.isArray(tactic.timelineData) && tactic.timelineData.length > 0 ? tactic.timelineData : [ [] ]
+    ));
+    currentStepIndex = Math.max(0, Math.min(tactic.currentStepIndex || 0, timelineData.length - 1));
+    bluePreset = JSON.parse(JSON.stringify(tactic.bluePreset || []));
+    redPreset = JSON.parse(JSON.stringify(tactic.redPreset || []));
+    selectedObjUid = null;
+
+    renderPresets();
+    setMyTeamSide(tactic.myTeamSide || 'blue');
+    if (tactic.selectedScreenshotId !== undefined) {
+        selectedScreenshotId = tactic.selectedScreenshotId;
+    }
+    setAppMode(tactic.currentMode || 'map');
+
+    renderScene();
+    recordHistory();
+}
+
+function onTacticSelectChange(tacticId) {
+    if (!tacticId) {
+        currentTacticId = null;
+        renderTacticsUI();
+        return;
+    }
+    loadTactic(tacticId);
+}
+
+function loadTactic(tacticId) {
+    const tactics = getSavedTacticsFromStorage();
+    const tactic = tactics.find(t => t.id === tacticId);
+    if (!tactic) {
+        showToast('⚠️ 선택한 전술을 찾을 수 없습니다.');
+        currentTacticId = null;
+        renderTacticsUI();
+        return;
+    }
+
+    currentTacticId = tactic.id;
+    applyBoardSnapshot(tactic);
+
+    renderTacticsUI();
+    showToast(`📂 '${tactic.name}' 전술을 불러왔습니다. (${timelineData.length}스텝)`);
+}
+
+function saveNewTactic(name) {
+    const tactics = getSavedTacticsFromStorage();
+    const newTactic = Object.assign({
+        id: "tactic_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5),
+        name: name,
+        updatedAt: Date.now()
+    }, createCurrentBoardSnapshot());
+
+    tactics.push(newTactic);
+    if (!saveTacticsToStorage(tactics)) return;
+
+    currentTacticId = newTactic.id;
+
+    renderTacticsUI();
+    showToast(`💾 '${name}' 전술이 새로 저장되었습니다.`);
+}
+
+function saveNewTacticFromToolbar() {
+    const tactics = getSavedTacticsFromStorage();
+    const defaultName = "전술 " + (tactics.length + 1);
+    const inputName = prompt("새로 저장할 전술 이름을 입력하세요:", defaultName);
+    if (inputName === null) return;
+    const finalName = inputName.trim() || defaultName;
+    saveNewTactic(finalName);
+}
+
+function updateSelectedTactic(_promptRename = true, targetId = null) {
+    const idToUpdate = targetId || currentTacticId;
+    if (!idToUpdate) {
+        showToast("⚠️ 먼저 드롭다운에서 수정할 전술을 선택해주세요.");
+        return;
+    }
+
+    const tactics = getSavedTacticsFromStorage();
+    const target = tactics.find(t => t.id === idToUpdate);
+    if (!target) {
+        showToast("⚠️ 수정할 전술을 찾을 수 없습니다.");
+        return;
+    }
+
+    const newName = prompt("전술 이름을 확인/수정하세요 (현재 보드 상태가 덮어써집니다):", target.name);
+    if (newName === null) return;
+    target.name = newName.trim() || target.name;
+
+    Object.assign(target, createCurrentBoardSnapshot(), { updatedAt: Date.now() });
+    if (!saveTacticsToStorage(tactics)) return;
+
+    currentTacticId = target.id;
+
+    renderTacticsUI();
+    showToast(`✅ '${target.name}' 전술이 현재 상태로 수정되었습니다.`);
+}
+
+function deleteSelectedTactic(targetId = null) {
+    const idToDelete = targetId || currentTacticId;
+    if (!idToDelete) {
+        showToast("⚠️ 삭제할 전술을 먼저 선택해주세요.");
+        return;
+    }
+
+    let tactics = getSavedTacticsFromStorage();
+    const target = tactics.find(t => t.id === idToDelete);
+    if (!target) {
+        showToast("⚠️ 삭제할 전술을 찾을 수 없습니다.");
+        return;
+    }
+
+    if (!confirm(`'${target.name}' 전술을 삭제하시겠습니까?`)) return;
+
+    tactics = tactics.filter(t => t.id !== idToDelete);
+    saveTacticsToStorage(tactics);
+
+    if (currentTacticId === idToDelete) {
+        currentTacticId = null;
+    }
+
+    renderTacticsUI();
+    showToast(`🗑️ '${target.name}' 전술이 삭제되었습니다.`);
+}
+
+function renderTacticsUI() {
+    const tactics = getSavedTacticsFromStorage();
+    if (currentTacticId && !tactics.some(t => t.id === currentTacticId)) {
+        currentTacticId = null;
+    }
+
+    // 1. 우측 사이드바 / 모바일 드롭다운 select 동기화
+    const selectConfigs = [
+        { id: 'sidebar-tactic-select', emptyLabel: '📋 저장된 전술 선택...' },
+        { id: 'mobile-tactic-select', emptyLabel: '📋 전술 선택...' }
+    ];
+    selectConfigs.forEach(({ id, emptyLabel }) => {
+        const sel = document.getElementById(id);
+        if (!sel) return;
+        sel.innerHTML = '';
+        const defaultOpt = document.createElement('option');
+        defaultOpt.value = '';
+        defaultOpt.innerText = emptyLabel;
+        sel.appendChild(defaultOpt);
+
+        tactics.forEach(t => {
+            const opt = document.createElement('option');
+            opt.value = t.id;
+            const stepCount = Array.isArray(t.timelineData) ? t.timelineData.length : 1;
+            opt.innerText = `${t.name} (${stepCount}스텝)`;
+            sel.appendChild(opt);
+        });
+        sel.value = currentTacticId || '';
+    });
+
+    // 2. 수정/삭제 버튼 활성/비활성 동기화
+    const hasActive = Boolean(currentTacticId);
+    [
+        'sidebar-tactic-update-btn',
+        'sidebar-tactic-delete-btn',
+        'mobile-tactic-update-btn',
+        'mobile-tactic-delete-btn'
+    ].forEach(btnId => {
+        const btn = document.getElementById(btnId);
+        if (btn) btn.disabled = !hasActive;
+    });
+
+    const countEl = document.getElementById('saved-tactics-count');
+    if (countEl) countEl.innerText = `${tactics.length}개`;
+}
+
 function setMyTeamSide(side) {
     myTeamSide = side;
     
@@ -1442,7 +1678,7 @@ function renderStrokes() {
     const strokeObjs = currentObjs.filter(o => o.type === 'pen_stroke');
     const activeStrokeUids = strokeObjs.map(o => o.uid);
     
-    svgLayer.querySelectorAll('path').forEach(p => {
+    svgLayer.querySelectorAll('path[data-uid]').forEach(p => {
         const uid = p.getAttribute('data-uid');
         if (uid && !activeStrokeUids.includes(uid)) p.remove();
     });
@@ -1492,7 +1728,7 @@ function renderStrokes() {
 
 function setDrawingTool(tool) {
     activeTool = tool;
-    document.querySelectorAll('.toolbar-group #tool-pen, .toolbar-group #tool-arrow, .toolbar-group #tool-eraser').forEach(btn => {
+    document.querySelectorAll('.toolbar-group #tool-select, .toolbar-group #tool-pen, .toolbar-group #tool-arrow, .toolbar-group #tool-eraser').forEach(btn => {
         btn.classList.remove('active');
     });
     const activeBtn = document.getElementById(`tool-${tool}`);
@@ -1501,6 +1737,8 @@ function setDrawingTool(tool) {
     document.querySelectorAll('#mobile-dropdown-menu .mobile-menu-btn[data-tool]').forEach(btn => {
         btn.classList.toggle('active', btn.getAttribute('data-tool') === tool);
     });
+
+    mapEl.classList.toggle('select-active', tool === 'select');
     
     if (tool === 'eraser') {
         mapEl.classList.add('eraser-active');
@@ -1681,7 +1919,7 @@ function clearDrawingsInCurrentStep() {
 
     timelineData[currentStepIndex] = nextObjs;
     mapEl.querySelectorAll('.arrow-control').forEach(el => el.remove());
-    svgLayer.querySelectorAll('line:not(.ghost-line), path').forEach(l => l.remove());
+    svgLayer.querySelectorAll('line:not(.ghost-line), path[data-uid]').forEach(l => l.remove());
     renderScene();
     recordHistory();
     showToast('🧹 현재 스텝의 선과 화살표를 지웠습니다.');
@@ -1699,7 +1937,7 @@ function deleteCurrentStep() {
     }
     // 기존 잔여 DOM 요소를 일괄 정리하여 렌더링 충돌 및 잔상 방지
     mapEl.querySelectorAll('.placed-object, .arrow-control').forEach(el => el.remove());
-    svgLayer.querySelectorAll('line, path').forEach(l => l.remove());
+    svgLayer.querySelectorAll('line, path[data-uid]').forEach(l => l.remove());
     
     renderScene();
     recordHistory();
@@ -1739,7 +1977,7 @@ function resetCurrentStep() {
     timelineData[currentStepIndex] = []; 
     // 잔여 DOM 강제 정리로 초기화 오작동 원천 차단
     mapEl.querySelectorAll('.placed-object, .arrow-control').forEach(el => el.remove());
-    svgLayer.querySelectorAll('line, path').forEach(l => l.remove());
+    svgLayer.querySelectorAll('line, path[data-uid]').forEach(l => l.remove());
     renderScene(); 
     recordHistory();
 }
@@ -1867,8 +2105,20 @@ function renderDOM(obj, className) {
         el.addEventListener('click', (e) => {
             e.stopPropagation();
             clearSelection();
-            selectedObjUid = obj.uid;
+            const targetObj = el._dataObj || obj;
+            selectedObjUid = targetObj.uid;
             el.classList.add('selected');
+            renderArrows();
+        });
+        // 더블클릭 시 캠프/오브젝트 반투명(처치/소모) 상태 토글
+        el.addEventListener('dblclick', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const targetObj = el._dataObj;
+            if (!targetObj || targetObj.type === 'champion') return;
+            targetObj.dimmed = !targetObj.dimmed;
+            renderScene();
+            recordHistory();
         });
         // 이벤트 등록 (최초 1회)
         addDragEvents(el); 
@@ -1899,6 +2149,8 @@ function renderDOM(obj, className) {
         el.classList.remove('selected');
     }
 
+    el.classList.toggle('dimmed', Boolean(obj.dimmed));
+
     // 챔피언 / 미니언 / 오브젝트 별 실시간 크기 적용
     const baseSize = obj.type === 'champion' ? champIconSize : minionIconSize;
     el.style.width = baseSize + "px";
@@ -1922,8 +2174,10 @@ function renderStartCtrl(obj) {
         el.addEventListener('click', (e) => {
             e.stopPropagation();
             clearSelection();
-            selectedObjUid = obj.uid;
+            const targetObj = el._dataObj || obj;
+            selectedObjUid = targetObj.uid;
             el.classList.add('selected');
+            renderArrows();
         });
         addDragEvents(el);
         mapEl.appendChild(el);
@@ -2265,15 +2519,18 @@ document.addEventListener('keydown', (e) => {
         nextStep();
     }
 
-    // 도구 단축키 (1: 펜, 2: 화살표, 3: 지우개, C: 선만 지우기)
+    // 도구 단축키 (1: 선택, 2: 펜, 3: 화살표, 4: 지우개, C: 선만 지우기)
     if (!e.ctrlKey && !e.metaKey && !e.altKey) {
         if (e.code === 'Digit1') {
             e.preventDefault();
-            setDrawingTool('pen');
+            setDrawingTool('select');
         } else if (e.code === 'Digit2') {
             e.preventDefault();
-            setDrawingTool('arrow');
+            setDrawingTool('pen');
         } else if (e.code === 'Digit3') {
+            e.preventDefault();
+            setDrawingTool('arrow');
+        } else if (e.code === 'Digit4') {
             e.preventDefault();
             setDrawingTool('eraser');
         } else if (e.code === 'KeyC') {
@@ -3049,11 +3306,16 @@ function bindTouchEvents() {
     let isPinching = false;
 
     let isTouchDragging = false;      // 합성 mousedown 을 실제로 보낸 상태인지
+    let isTouchPanning = false;       // 선택 모드에서 배경 1손가락 패닝 중인지
     let touchDragTarget = null;
     let touchStartX = 0;
     let touchStartY = 0;
+    let lastPanX = 0;
+    let lastPanY = 0;
     let touchMovedDist = 0;
     let suppressUntilRelease = false; // 핀치가 1손가락으로 무너진 뒤 오작동 방지
+    let lastTapTime = 0;
+    let lastTapTarget = null;
 
     const dispatchMouse = (type, target, clientX, clientY) => {
         target.dispatchEvent(new MouseEvent(type, {
@@ -3067,14 +3329,31 @@ function bindTouchEvents() {
 
     // 합성 mousedown 을 보냈을 때만 mouseup 을 짝지어 보낸다 (툴바 등 무관한 터치에는 무반응)
     const endTouchDrag = (clientX, clientY) => {
+        if (isTouchPanning) {
+            isTouchPanning = false;
+            if (touchMovedDist < TAP_THRESHOLD && touchDragTarget) {
+                dispatchMouse('click', touchDragTarget, clientX, clientY);
+            }
+            touchDragTarget = null;
+            return;
+        }
         if (!isTouchDragging) return;
         isTouchDragging = false;
 
         dispatchMouse('mouseup', window, clientX, clientY);
 
-        // 거의 움직이지 않았다면 탭 → click 을 보내 선(stroke)/화살표 선택 동작 보존
+        // 거의 움직이지 않았다면 탭 → click(및 300ms 이내 연속 탭 시 dblclick) 발생
         if (touchMovedDist < TAP_THRESHOLD && touchDragTarget) {
             dispatchMouse('click', touchDragTarget, clientX, clientY);
+            const now = Date.now();
+            if (lastTapTarget === touchDragTarget && (now - lastTapTime) < 320) {
+                dispatchMouse('dblclick', touchDragTarget, clientX, clientY);
+                lastTapTime = 0;
+                lastTapTarget = null;
+            } else {
+                lastTapTime = now;
+                lastTapTarget = touchDragTarget;
+            }
         }
         touchDragTarget = null;
     };
@@ -3101,8 +3380,7 @@ function bindTouchEvents() {
 
         if (isPinching || suppressUntilRelease) return;
 
-        // 👆 1손가락: 오브젝트 드래그와 배경 그리기 모두 마우스 경로로 위임한다.
-        // preventDefault 로 브라우저 호환 마우스 이벤트(중복 실행)와 네이티브 스크롤을 함께 차단
+        // 👆 1손가락: preventDefault 로 브라우저 호환 마우스 이벤트(중복 실행)와 네이티브 스크롤을 차단
         e.preventDefault();
 
         const touch = e.touches[0];
@@ -3110,6 +3388,23 @@ function bindTouchEvents() {
         touchStartY = touch.clientY;
         touchMovedDist = 0;
         touchDragTarget = touch.target;
+
+        const isObjOrCtrl = touch.target && typeof touch.target.closest === 'function' &&
+            (touch.target.closest('.placed-object') || touch.target.closest('.arrow-control'));
+
+        if (activeTool === 'select' && !isObjOrCtrl) {
+            // 선택 모드에서 빈 배경 터치 시 그리기 대신 1손가락 패닝으로 동작
+            isTouchPanning = true;
+            lastPanX = touch.clientX;
+            lastPanY = touch.clientY;
+            const isDrawableEl = touch.target && (touch.target.tagName === 'path' || touch.target.tagName === 'line' ||
+                (typeof touch.target.closest === 'function' && (touch.target.closest('path') || touch.target.closest('line'))));
+            if (!isDrawableEl) {
+                clearSelection();
+            }
+            return;
+        }
+
         isTouchDragging = true;
         dispatchMouse('mousedown', touch.target, touch.clientX, touch.clientY);
     }, { passive: false });
@@ -3137,6 +3432,25 @@ function bindTouchEvents() {
             if (Math.abs(targetZoom - zoomLevel) > 0.01) {
                 zoomToPoint(parseFloat(targetZoom.toFixed(2)), midX, midY);
             } else if ((movedX || movedY) && typeof syncObsViewport === 'function') {
+                syncObsViewport();
+            }
+            return;
+        }
+
+        if (isTouchPanning && e.touches.length === 1) {
+            e.preventDefault();
+            const touch = e.touches[0];
+            touchMovedDist = Math.max(
+                touchMovedDist,
+                Math.hypot(touch.clientX - touchStartX, touch.clientY - touchStartY)
+            );
+            const movedX = touch.clientX - lastPanX;
+            const movedY = touch.clientY - lastPanY;
+            mapArea.scrollLeft -= movedX;
+            mapArea.scrollTop -= movedY;
+            lastPanX = touch.clientX;
+            lastPanY = touch.clientY;
+            if ((movedX || movedY) && typeof syncObsViewport === 'function') {
                 syncObsViewport();
             }
             return;
