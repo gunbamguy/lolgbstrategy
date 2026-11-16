@@ -2584,6 +2584,20 @@ document.getElementById('menu-add-arrow').addEventListener('click', () => {
 });
 
 document.addEventListener('keydown', (e) => {
+    if (isTutorialActive) {
+        if (e.code === 'Escape') {
+            e.preventDefault();
+            endTutorial();
+        } else if (e.code === 'ArrowRight' || e.code === 'Enter') {
+            e.preventDefault();
+            nextTutorialStep();
+        } else if (e.code === 'ArrowLeft') {
+            e.preventDefault();
+            prevTutorialStep();
+        }
+        return;
+    }
+
     // 텍스트 입력 필드(검색창, 닉네임 입력 등)에서만 단축키를 방지 (range 슬라이더 등은 제외)
     const isTyping = e.target.tagName === 'TEXTAREA' || 
                      (e.target.tagName === 'INPUT' && (e.target.type === 'text' || e.target.type === 'search' || !e.target.type));
@@ -3612,6 +3626,321 @@ function bindTouchEvents() {
         resizeFitTimer = setTimeout(autoFitMobileMap, 150);
     });
 }
+
+// ==========================================================================
+// 🎓 단계별 인터랙티브 스포트라이트 튜토리얼
+// ==========================================================================
+
+let isTutorialActive = false;
+let currentTutorialStepIdx = 0;
+let tutorialPrevLeftTab = null;
+let tutorialPrevRightTab = null;
+
+const TUTORIAL_STEPS = [
+    {
+        category: '시작하기',
+        title: '🗺️ 소환사의 협곡 전략 보드 오리엔테이션',
+        target: '#map-area',
+        preferCenter: true,
+        desc: '소환사의 협곡 맵 위에 <strong>챔피언 · 와드 · 오브젝트</strong>를 배치하고, 펜과 화살표로 동선과 교전 구도를 시각적으로 설계할 수 있는 전략 보드입니다.',
+        tip: '<strong>핵심 조작</strong>: 마우스 <kbd>휠</kbd>로 확대/축소하고, 배경을 <strong>우클릭 드래그</strong>하여 맵을 자유롭게 이동(패닝)할 수 있습니다.'
+    },
+    {
+        category: '좌측 패널',
+        title: '👥 챔피언 검색 · 빠른 추가 · 진영/배경 모드',
+        target: '#sidebar-left',
+        mobileTarget: '#btn-toggle-left-sidebar',
+        onEnter: () => {
+            if (typeof switchLeftTab === 'function') switchLeftTab('champs');
+        },
+        desc: '초성 검색(예: <code>ㄹㅅ</code>)으로 챔피언을 빠르게 찾고, <strong>더블클릭 → 아군 추가</strong> / <strong>우클릭 → 적군 추가</strong>로 팀 슬롯을 채우거나 맵으로 직접 드래그하세요. 상단 탭에서 <strong>프리셋</strong>과 <strong>스크린샷 모드</strong>(<kbd>Ctrl+V</kbd>)도 전환할 수 있습니다.',
+        tip: '하단에서 <strong>아군(My Team) 진영</strong>(블루/레드)과 <strong>배경 모드</strong>(소환사의 협곡 / 스크린샷)를 언제든 변경할 수 있습니다.'
+    },
+    {
+        category: '상단 툴바',
+        title: '✏️ 선택 · 펜 · 화살표 · 지우개 & 캠프젠',
+        target: '#top-toolbar',
+        desc: '숫자키 <kbd>1</kbd> <strong>선택</strong>, <kbd>2</kbd> <strong>펜</strong>, <kbd>3</kbd> <strong>화살표</strong>, <kbd>4</kbd> <strong>지우개</strong>로 도구를 즉시 전환할 수 있으며, <kbd>C</kbd> 키는 오브젝트를 유지한 채 선과 화살표만 지웁니다. 우측의 <strong>🌲 캠프젠</strong>은 정글 몬스터를 기본 위치에 한 번에 생성합니다.',
+        tip: '<strong>팁</strong>: <strong>👆 선택(1)</strong> 모드에서는 실수로 그림이 그려지지 않아 챔피언과 화살표 핸들 위치 조정에 편리합니다. <kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Shift+Z</kbd>로 실행 취소/재실행을 지원합니다.'
+    },
+    {
+        category: '협곡 전술 조작',
+        title: '🎯 챔피언 팀 테두리 전환 & 캠프 반투명 토글',
+        target: '#rift-map',
+        preferCenter: true,
+        desc: '맵에 배치된 <strong>챔피언을 더블클릭</strong>하면 테두리가 <code>⚪ 흰색 → 🔵 블루 → 🔴 레드</code> 순으로 바뀝니다(우클릭 메뉴에서도 선택 가능). <strong>정글 캠프나 오브젝트를 더블클릭</strong>하면 반투명 상태로 전환되어 카운터 정글·처치 여부를 직관적으로 표시할 수 있습니다.',
+        tip: '<strong>화살표 연결</strong>: 배치된 챔피언이나 오브젝트를 우클릭한 뒤 <strong>➤ 화살표 추가/제거</strong>를 누르면 이동 방향 화살표 핸들이 붙습니다.'
+    },
+    {
+        category: '우측 팀/핑 패널',
+        title: '👥 팀 일괄 배치 & 📋 전술 페이지 저장/관리',
+        target: '#tab-content-team',
+        mobileTarget: '#btn-toggle-right-sidebar',
+        onEnter: () => {
+            if (typeof switchRightTab === 'function') switchRightTab('team');
+        },
+        desc: '<strong>Blue Team / Red Team</strong> 상자 자체를 맵으로 드래그하면 등록된 5명의 챔피언을 한 번에 배치할 수 있고, <strong>Smart Pings</strong>로 위험/지원/미아 핑을 찍을 수 있습니다. 아래 <strong>📋 전술 페이지</strong>에서는 모든 스텝을 저장·불러오기·수정·삭제할 수 있습니다.',
+        tip: '<strong>팁</strong>: 기존 전술을 불러온 뒤 맵을 수정했다면 <strong>✏️ 수정</strong> 버튼 한 번으로 현재 상태와 이름을 덮어쓸 수 있습니다.'
+    },
+    {
+        category: '우측 오브젝트 패널',
+        title: '👾 에픽 몬스터 · 미니언 · 유틸리티 오브젝트',
+        target: '#sidebar-right',
+        mobileTarget: '#btn-toggle-right-sidebar',
+        onEnter: () => {
+            if (typeof switchRightTab === 'function') switchRightTab('objects');
+        },
+        desc: '<strong>오브젝트 탭</strong>에서는 바론·드래곤·전령·유충 같은 에픽 몬스터와 버프/정글 몹, <strong>미니언 웨이브</strong>(웨이브 방향 반전 가능), <strong>와드 · 텔포</strong> 등 유틸리티 아이콘을 맵에 드래그해 배치할 수 있습니다.',
+        tip: '배치된 와드나 미니언 역시 <kbd>Del</kbd> 또는 <kbd>Backspace</kbd> 키로 선택 즉시 삭제할 수 있습니다.'
+    },
+    {
+        category: '아이콘 크기 설정',
+        title: '📏 챔피언 · 미니언 · 오브젝트 3종 크기 솔루션',
+        target: '#size-control-container',
+        mobileTarget: '#btn-toggle-right-sidebar',
+        onEnter: () => {
+            if (typeof switchRightTab === 'function') switchRightTab('team');
+        },
+        desc: '<strong>👤 챔피언</strong>(16~72px), <strong>⚔️ 미니언</strong>(20~120px), <strong>👾 오브젝트</strong>(16~80px) 크기를 각각 독립적으로 조절할 수 있습니다. 설정값은 브라우저에 자동 저장되며 <strong>↺ 기본값</strong> 버튼으로 언제든 초기화됩니다.',
+        tip: '<strong>배율에 맞춰 자동 스케일</strong>을 켜두면 사용자가 정한 기준 크기를 유지한 채 줌 확대 시 아이콘만 과도하게 커지는 것을 자동으로 완화해 줍니다.'
+    },
+    {
+        category: '타임라인 & 송출',
+        title: '🎬 타임라인 스텝(Step) 애니메이션 & OBS 송출',
+        target: '#timeline',
+        onEnter: () => {
+            if (typeof switchRightTab === 'function') switchRightTab('obs');
+        },
+        desc: '<strong>+ Step 추가</strong>로 시간대별 전개 장면을 이어가며 <strong>◀ 이전 / ▶ 다음</strong>(단축키 <kbd>←</kbd> / <kbd>→</kbd>)으로 부드러운 이동 애니메이션을 재생합니다. <strong>이전 위치 잔상</strong>을 켜면 직전 스텝의 출발 위치와 이동 궤적이 점선으로 표시됩니다.',
+        tip: '<strong>OBS 방송 연동</strong>: 우측 <strong>📹 OBS</strong> 탭에서 투명 배경 오버레이 창을 열어 방송 화면 위에 전술 보드를 실시간으로 송출할 수 있습니다.'
+    }
+];
+
+function getActiveTabId(containerSelector, fallbackId) {
+    const activeBtn = document.querySelector(`${containerSelector} .sidebar-tabs .tab-btn.active`);
+    if (!activeBtn || !activeBtn.id) return fallbackId;
+    return activeBtn.id.replace(/^tab-btn-/, '');
+}
+
+function startTutorial(stepIndex = 0) {
+    const overlay = document.getElementById('tutorial-overlay');
+    if (!overlay) return;
+
+    if (typeof hideHelpModal === 'function') hideHelpModal();
+    if (typeof closeMobileSidebars === 'function') closeMobileSidebars();
+    if (typeof closeMobileDropdown === 'function') closeMobileDropdown();
+
+    if (!isTutorialActive) {
+        tutorialPrevLeftTab = getActiveTabId('#sidebar-left', 'champs');
+        tutorialPrevRightTab = getActiveTabId('#right-panel-wrapper', 'team');
+    }
+
+    isTutorialActive = true;
+    overlay.classList.add('active');
+    overlay.setAttribute('aria-hidden', 'false');
+    goToTutorialStep(stepIndex);
+}
+
+function endTutorial() {
+    const overlay = document.getElementById('tutorial-overlay');
+    if (!isTutorialActive && (!overlay || !overlay.classList.contains('active'))) return;
+
+    isTutorialActive = false;
+    if (overlay) {
+        overlay.classList.remove('active');
+        overlay.setAttribute('aria-hidden', 'true');
+    }
+
+    if (tutorialPrevLeftTab && typeof switchLeftTab === 'function') {
+        switchLeftTab(tutorialPrevLeftTab);
+    }
+    if (tutorialPrevRightTab && typeof switchRightTab === 'function') {
+        switchRightTab(tutorialPrevRightTab);
+    }
+    tutorialPrevLeftTab = null;
+    tutorialPrevRightTab = null;
+}
+
+function nextTutorialStep() {
+    if (!isTutorialActive) return;
+    if (currentTutorialStepIdx >= TUTORIAL_STEPS.length - 1) {
+        endTutorial();
+        return;
+    }
+    goToTutorialStep(currentTutorialStepIdx + 1);
+}
+
+function prevTutorialStep() {
+    if (!isTutorialActive || currentTutorialStepIdx <= 0) return;
+    goToTutorialStep(currentTutorialStepIdx - 1);
+}
+
+function goToTutorialStep(idx) {
+    const clampedIdx = Math.max(0, Math.min(TUTORIAL_STEPS.length - 1, idx));
+    currentTutorialStepIdx = clampedIdx;
+    const step = TUTORIAL_STEPS[clampedIdx];
+
+    if (typeof step.onEnter === 'function') {
+        step.onEnter();
+    }
+
+    const stepBadge = document.getElementById('tutorial-step-badge');
+    const categoryEl = document.getElementById('tutorial-category');
+    const titleEl = document.getElementById('tutorial-title');
+    const descEl = document.getElementById('tutorial-desc');
+    const tipEl = document.getElementById('tutorial-tip');
+    const dotsEl = document.getElementById('tutorial-dots');
+    const prevBtn = document.getElementById('tutorial-prev-btn');
+    const nextBtn = document.getElementById('tutorial-next-btn');
+
+    if (stepBadge) stepBadge.innerText = `STEP ${clampedIdx + 1} / ${TUTORIAL_STEPS.length}`;
+    if (categoryEl) categoryEl.innerText = step.category || '';
+    if (titleEl) titleEl.innerText = step.title || '';
+    if (descEl) descEl.innerHTML = step.desc || '';
+    if (tipEl) {
+        if (step.tip) {
+            tipEl.style.display = 'block';
+            tipEl.innerHTML = step.tip;
+        } else {
+            tipEl.style.display = 'none';
+            tipEl.innerHTML = '';
+        }
+    }
+
+    if (dotsEl) {
+        dotsEl.innerHTML = '';
+        TUTORIAL_STEPS.forEach((s, i) => {
+            const dot = document.createElement('button');
+            dot.type = 'button';
+            dot.className = 'tutorial-dot' + (i === clampedIdx ? ' active' : '');
+            dot.title = `${i + 1}. ${s.category}`;
+            dot.onclick = () => goToTutorialStep(i);
+            dotsEl.appendChild(dot);
+        });
+    }
+
+    if (prevBtn) prevBtn.disabled = clampedIdx === 0;
+    if (nextBtn) {
+        nextBtn.innerText = clampedIdx === TUTORIAL_STEPS.length - 1 ? '✔ 완료' : '다음 ▶';
+    }
+
+    requestAnimationFrame(() => {
+        positionTutorialElements();
+    });
+}
+
+function getTutorialTargetRect(step) {
+    const isMobile = window.innerWidth <= 768;
+    const selector = (isMobile && step.mobileTarget) ? step.mobileTarget : step.target;
+    const targetEl = selector ? document.querySelector(selector) : null;
+    if (!targetEl) return null;
+
+    const raw = targetEl.getBoundingClientRect();
+    if (!raw || raw.width <= 0 || raw.height <= 0) return null;
+
+    // #rift-map 처럼 확대되어 #map-area 뷰포트보다 큰 경우 보이는 교집합 영역으로 클램프
+    if (step.target === '#rift-map') {
+        const mapArea = document.getElementById('map-area');
+        if (mapArea) {
+            const areaRect = mapArea.getBoundingClientRect();
+            const left = Math.max(raw.left, areaRect.left + 4);
+            const top = Math.max(raw.top, areaRect.top + 4);
+            const right = Math.min(raw.right, areaRect.right - 4);
+            const bottom = Math.min(raw.bottom, areaRect.bottom - 4);
+            if (right > left && bottom > top) {
+                return { left, top, right, bottom, width: right - left, height: bottom - top };
+            }
+        }
+    }
+
+    return raw;
+}
+
+function positionTutorialElements() {
+    if (!isTutorialActive) return;
+
+    const spotlight = document.getElementById('tutorial-spotlight');
+    const card = document.getElementById('tutorial-card');
+    if (!spotlight || !card) return;
+
+    const step = TUTORIAL_STEPS[currentTutorialStepIdx];
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const margin = 14;
+    const pad = 6;
+    const gap = 16;
+
+    const rect = getTutorialTargetRect(step);
+    const cardRect = card.getBoundingClientRect();
+    const cw = cardRect.width || Math.min(390, vw - 24);
+    const ch = cardRect.height || 260;
+
+    if (!rect || rect.right < 0 || rect.left > vw || rect.bottom < 0 || rect.top > vh) {
+        spotlight.style.opacity = '0';
+        spotlight.style.left = `${vw / 2}px`;
+        spotlight.style.top = `${vh / 2}px`;
+        spotlight.style.width = '0px';
+        spotlight.style.height = '0px';
+
+        card.style.left = `${Math.max(margin, (vw - cw) / 2)}px`;
+        card.style.top = `${Math.max(margin, (vh - ch) / 2)}px`;
+        return;
+    }
+
+    const spotLeft = Math.max(4, rect.left - pad);
+    const spotTop = Math.max(4, rect.top - pad);
+    const spotRight = Math.min(vw - 4, rect.right + pad);
+    const spotBottom = Math.min(vh - 4, rect.bottom + pad);
+    const spotW = Math.max(24, spotRight - spotLeft);
+    const spotH = Math.max(24, spotBottom - spotTop);
+
+    spotlight.style.opacity = '1';
+    spotlight.style.left = `${spotLeft}px`;
+    spotlight.style.top = `${spotTop}px`;
+    spotlight.style.width = `${spotW}px`;
+    spotlight.style.height = `${spotH}px`;
+
+    const clampLeft = (val) => Math.max(margin, Math.min(val, vw - cw - margin));
+    const clampTop = (val) => Math.max(margin, Math.min(val, vh - ch - margin));
+
+    let cardLeft;
+    let cardTop;
+
+    const isLargeViewportTarget = step.preferCenter || (spotW > vw * 0.58 && spotH > vh * 0.55);
+    if (isLargeViewportTarget) {
+        cardLeft = clampLeft((vw - cw) / 2);
+        cardTop = clampTop(vh - ch - 30);
+    } else if (vw - spotRight >= cw + gap + margin) {
+        // 오른쪽 여유 공간
+        cardLeft = spotRight + gap;
+        cardTop = clampTop(spotTop + (spotH - ch) / 2);
+    } else if (spotLeft >= cw + gap + margin) {
+        // 왼쪽 여유 공간
+        cardLeft = spotLeft - cw - gap;
+        cardTop = clampTop(spotTop + (spotH - ch) / 2);
+    } else if (vh - spotBottom >= ch + gap + margin) {
+        // 아래쪽 여유 공간
+        cardLeft = clampLeft(spotLeft + (spotW - cw) / 2);
+        cardTop = spotBottom + gap;
+    } else if (spotTop >= ch + gap + margin) {
+        // 위쪽 여유 공간
+        cardLeft = clampLeft(spotLeft + (spotW - cw) / 2);
+        cardTop = spotTop - ch - gap;
+    } else {
+        // 화면 중앙 하단 Fallback
+        cardLeft = clampLeft((vw - cw) / 2);
+        cardTop = clampTop(vh - ch - margin);
+    }
+
+    card.style.left = `${cardLeft}px`;
+    card.style.top = `${cardTop}px`;
+}
+
+window.addEventListener('resize', () => {
+    if (isTutorialActive) {
+        positionTutorialElements();
+    }
+});
 
 init();
 bindTouchEvents();

@@ -960,6 +960,248 @@ svg line.selected {
 }
 
 /* ==========================================================================
+   🎓 단계별 인터랙티브 스포트라이트 튜토리얼 (Hextech Dark & Gold & Teal)
+   ========================================================================== */
+.tutorial-launch-btn {
+    background: linear-gradient(135deg, rgba(10, 200, 185, 0.22) 0%, rgba(200, 155, 60, 0.22) 100%);
+    border: 1px solid #0ac8b9;
+    color: #e0fbf8;
+    font-weight: bold;
+    padding: 4px 10px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 0 8px rgba(10, 200, 185, 0.2);
+}
+.tutorial-launch-btn:hover {
+    background: linear-gradient(135deg, rgba(10, 200, 185, 0.38) 0%, rgba(200, 155, 60, 0.35) 100%);
+    border-color: #f0e6d2;
+    color: #ffffff;
+    box-shadow: 0 0 14px rgba(10, 200, 185, 0.45);
+}
+
+.tutorial-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2500;
+    display: none;
+    pointer-events: auto;
+}
+.tutorial-overlay.active {
+    display: block;
+}
+
+.tutorial-spotlight {
+    position: fixed;
+    border-radius: 10px;
+    border: 2px solid #0ac8b9;
+    box-shadow:
+        0 0 0 9999px rgba(4, 7, 14, 0.78),
+        0 0 25px rgba(10, 200, 185, 0.65),
+        inset 0 0 15px rgba(200, 155, 60, 0.35);
+    pointer-events: none;
+    z-index: 2501;
+    transition:
+        top 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+        left 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+        width 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+        height 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+        opacity 0.2s ease;
+}
+
+.tutorial-card {
+    position: fixed;
+    width: 390px;
+    max-width: calc(100vw - 24px);
+    box-sizing: border-box;
+    background: linear-gradient(160deg, #161d2c 0%, #0d121c 65%, #090c14 100%);
+    border: 1.5px solid #c89b3c;
+    border-radius: 10px;
+    padding: 16px 18px;
+    z-index: 2502;
+    box-shadow:
+        0 14px 40px rgba(0, 0, 0, 0.85),
+        0 0 22px rgba(10, 200, 185, 0.2),
+        inset 0 1px 0 rgba(240, 230, 210, 0.16);
+    color: #f0e6d2;
+    transition:
+        top 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+        left 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.tutorial-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(200, 155, 60, 0.28);
+}
+
+.tutorial-step-badge {
+    background: linear-gradient(135deg, #c89b3c 0%, #9a7426 100%);
+    color: #090d15;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 2px 8px;
+    border-radius: 12px;
+    letter-spacing: 0.4px;
+}
+
+.tutorial-category {
+    font-size: 11px;
+    color: #0ac8b9;
+    font-weight: bold;
+    background: rgba(10, 200, 185, 0.12);
+    border: 1px solid rgba(10, 200, 185, 0.35);
+    padding: 2px 8px;
+    border-radius: 12px;
+}
+
+.tutorial-close-btn {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: #9aa4b8;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 4px;
+    transition: color 0.15s;
+}
+.tutorial-close-btn:hover {
+    color: #f0e6d2;
+}
+
+.tutorial-title {
+    margin: 0 0 8px 0;
+    font-size: 15.5px;
+    font-weight: 700;
+    color: #f0e6d2;
+    line-height: 1.35;
+}
+
+.tutorial-desc {
+    font-size: 13px;
+    line-height: 1.6;
+    color: #cfd7e6;
+    word-break: keep-all;
+}
+.tutorial-desc strong {
+    color: #f0e6d2;
+}
+.tutorial-desc kbd,
+.tutorial-tip kbd {
+    background: #1d2536;
+    color: #f0e6d2;
+    border: 1px solid rgba(200, 155, 60, 0.45);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-family: monospace;
+    font-size: 11.5px;
+}
+.tutorial-desc code {
+    background: rgba(10, 200, 185, 0.12);
+    color: #8df5eb;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 12px;
+}
+
+.tutorial-tip {
+    margin-top: 10px;
+    padding: 8px 10px;
+    background: rgba(10, 200, 185, 0.08);
+    border-left: 3px solid #0ac8b9;
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #b8ece6;
+    word-break: keep-all;
+}
+
+.tutorial-dots {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    margin: 13px 0 12px;
+}
+.tutorial-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: none;
+    padding: 0;
+    background: rgba(200, 155, 60, 0.28);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.tutorial-dot:hover {
+    background: rgba(200, 155, 60, 0.6);
+}
+.tutorial-dot.active {
+    width: 20px;
+    border-radius: 4px;
+    background: #0ac8b9;
+    box-shadow: 0 0 8px rgba(10, 200, 185, 0.7);
+}
+
+.tutorial-card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.tutorial-nav-group {
+    display: flex;
+    gap: 6px;
+}
+
+.tutorial-btn {
+    border-radius: 5px;
+    padding: 6px 12px;
+    font-size: 12.5px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.18s ease;
+}
+.tutorial-btn.secondary {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid #3c465c;
+    color: #9da8bd;
+}
+.tutorial-btn.secondary:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #e2e8f5;
+}
+.tutorial-btn.nav {
+    background: #1b2436;
+    border: 1px solid rgba(200, 155, 60, 0.45);
+    color: #f0e6d2;
+}
+.tutorial-btn.nav:hover:not(:disabled) {
+    background: #253149;
+    border-color: #c89b3c;
+}
+.tutorial-btn.nav:disabled {
+    opacity: 0.38;
+    cursor: not-allowed;
+}
+.tutorial-btn.primary {
+    background: linear-gradient(135deg, #0ac8b9 0%, #078d83 100%);
+    border: 1px solid #4cf2e5;
+    color: #041315;
+    box-shadow: 0 0 12px rgba(10, 200, 185, 0.35);
+}
+.tutorial-btn.primary:hover {
+    filter: brightness(1.1);
+    box-shadow: 0 0 16px rgba(10, 200, 185, 0.55);
+}
+
+/* ==========================================================================
    📱 모바일 전용 반응형 슬라이딩 드로어 & 햄버거 드롭다운 스타일 (PC 격리)
    ========================================================================== */
 
