@@ -286,24 +286,36 @@ function renderGhosts() {
 
 function renderDOM(obj, className) {
     let el = document.getElementById(obj.uid);
-    
+    const desiredSrc = obj.type === 'champion'
+        ? (obj.champId && obj.champId !== "Poro"
+            ? (obj.champId === "Locke"
+                ? "images/Locke.png"
+                : `https://ddragon.leagueoflegends.com/cdn/${currentVersion || '14.5.1'}/img/champion/${obj.champId}.png`)
+            : "__poro__")
+        : (obj.src || "");
+
     if (!el) {
         el = document.createElement(obj.type === 'champion' ? 'div' : 'img');
         el.id = obj.uid;
         el.className = className;
         el.draggable = false;
-        if(obj.type === 'champion') {
-            if (obj.champId && obj.champId !== "Poro") {
-                const imgUrl = obj.champId === "Locke" ? "images/Locke.png" : `https://ddragon.leagueoflegends.com/cdn/${currentVersion}/img/champion/${obj.champId}.png`;
-                el.style.backgroundImage = `url(${imgUrl})`;
+        mapEl.appendChild(el);
+    }
+
+    if (el.dataset.renderSrc !== desiredSrc) {
+        el.dataset.renderSrc = desiredSrc;
+        if (obj.type === 'champion') {
+            if (desiredSrc !== "__poro__") {
+                el.style.backgroundImage = `url(${desiredSrc})`;
                 el.style.backgroundSize = 'cover';
+                el.style.backgroundColor = '#000';
             } else {
+                el.style.backgroundImage = 'none';
                 el.style.backgroundColor = '#ccc';
             }
         } else {
-            el.src = obj.src;
+            el.src = desiredSrc;
         }
-        mapEl.appendChild(el);
     }
 
     if (obj.type === 'champion') {
@@ -351,7 +363,7 @@ function renderArrows() {
     const currentObjs = timelineData[currentStepIndex] || [];
     
     // 1) 기존 화살표 중 삭제된 것 정리
-    const arrowObjs = currentObjs.filter(o => (o.arrow && o.arrow.hasArrow) || o.type === 'free_arrow');
+    const arrowObjs = currentObjs.filter(o => o.arrow && o.arrow.hasArrow);
     const activeArrowUids = arrowObjs.map(o => o.uid);
     svgLayer.querySelectorAll('g.arrow-group').forEach(g => {
         const uid = g.getAttribute('data-uid');

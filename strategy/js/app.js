@@ -864,7 +864,10 @@ function triggerStepAnimation() {
 function restoreState(snapshot) {
     triggerStepAnimation();
     timelineData = JSON.parse(JSON.stringify(snapshot.data));
-    currentStepIndex = snapshot.stepIndex;
+    currentStepIndex = Math.max(0, Math.min(snapshot.stepIndex || 0, timelineData.length - 1));
+    if (selectedObjUid && !(timelineData[currentStepIndex] || []).some(o => o.uid === selectedObjUid)) {
+        selectedObjUid = null;
+    }
     renderScene();
 }
 
@@ -1278,11 +1281,12 @@ function createCurrentBoardSnapshot() {
         bluePreset: JSON.parse(JSON.stringify(bluePreset || [])),
         redPreset: JSON.parse(JSON.stringify(redPreset || [])),
         currentMode: currentMode,
-        selectedScreenshotId: selectedScreenshotId
+        selectedScreenshotId: selectedScreenshotId,
+        showGhostChampions: showGhostChampions
     };
 }
 
-function applyBoardSnapshot(tactic) {
+function applyBoardSnapshot(tactic, shouldRecordHistory = true) {
     triggerStepAnimation();
     mapEl.querySelectorAll('.placed-object, .arrow-control').forEach(el => el.remove());
     svgLayer.querySelectorAll('line, path[data-uid]').forEach(l => l.remove());
@@ -1295,15 +1299,19 @@ function applyBoardSnapshot(tactic) {
     redPreset = JSON.parse(JSON.stringify(tactic.redPreset || []));
     selectedObjUid = null;
 
+    showGhostChampions = typeof tactic.showGhostChampions === 'boolean' ? tactic.showGhostChampions : true;
+    const ghostCb = document.getElementById('show-ghost-checkbox');
+    if (ghostCb) ghostCb.checked = showGhostChampions;
+
     renderPresets();
     setMyTeamSide(tactic.myTeamSide || 'blue');
-    if (tactic.selectedScreenshotId !== undefined) {
-        selectedScreenshotId = tactic.selectedScreenshotId;
-    }
+    selectedScreenshotId = tactic.selectedScreenshotId !== undefined ? tactic.selectedScreenshotId : null;
     setAppMode(tactic.currentMode || 'map');
 
     renderScene();
-    recordHistory();
+    if (shouldRecordHistory) {
+        recordHistory();
+    }
 }
 
 function onTacticSelectChange(tacticId) {
@@ -2153,24 +2161,20 @@ function renderGhosts() {
 
 function renderDOM(obj, className) {
     let el = document.getElementById(obj.uid);
-    
+    const desiredSrc = obj.type === 'champion'
+        ? (obj.champId && obj.champId !== "Poro"
+            ? (obj.champId === "Locke"
+                ? "images/Locke.png"
+                : `https://ddragon.leagueoflegends.com/cdn/${currentVersion || '14.24.1'}/img/champion/${obj.champId}.png`)
+            : "__poro__")
+        : (obj.src || "");
+
     if (!el) {
         // DOM 생성
         el = document.createElement(obj.type === 'champion' ? 'div' : 'img');
         el.id = obj.uid;
         el.className = className;
         el.draggable = false;
-        if(obj.type === 'champion') {
-            if (obj.champId && obj.champId !== "Poro") {
-                const imgUrl = obj.champId === "Locke" ? "images/Locke.png" : `https://ddragon.leagueoflegends.com/cdn/${currentVersion}/img/champion/${obj.champId}.png`;
-                el.style.backgroundImage = `url(${imgUrl})`;
-                el.style.backgroundSize = 'cover';
-            } else {
-                el.style.backgroundColor = '#ccc';
-            }
-        } else {
-            el.src = obj.src;
-        }
         // 클릭 이벤트 바인딩
         el.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -2203,6 +2207,22 @@ function renderDOM(obj, className) {
         // 이벤트 등록 (최초 1회)
         addDragEvents(el); 
         mapEl.appendChild(el);
+    }
+
+    if (el.dataset.renderSrc !== desiredSrc) {
+        el.dataset.renderSrc = desiredSrc;
+        if (obj.type === 'champion') {
+            if (desiredSrc !== "__poro__") {
+                el.style.backgroundImage = `url(${desiredSrc})`;
+                el.style.backgroundSize = 'cover';
+                el.style.backgroundColor = '#000';
+            } else {
+                el.style.backgroundImage = 'none';
+                el.style.backgroundColor = '#ccc';
+            }
+        } else {
+            el.src = desiredSrc;
+        }
     }
 
     // [핵심] DOM 요소에 '현재 스텝의 데이터 객체'를 연결하여 최신 상태 유지
@@ -2796,6 +2816,7 @@ function saveCampPositions() {
         type: o.type,
         src: o.src,
         minionType: o.minionType,
+        dimmed: Boolean(o.dimmed),
         x: Math.round(o.x),
         y: Math.round(o.y)
     }));
@@ -2822,29 +2843,46 @@ function spawnAllCamps() {
     }
 
     const nowObjs = timelineData[currentStepIndex] || [];
+    const isJungleCampObj = (o) => {
+        if (!o || o.type !== 'object') return false;
+        const src = o.src ? o.src.toLowerCase() : '';
+        return src.includes('gromp') || 
+               src.includes('wolf') || 
+               src.includes('raptor') || 
+               src.includes('krug') || 
+               src.includes('scuttler') || 
+               src.includes('blue') || 
+               src.includes('red');
+    };
     
-    // 기존 맵 위의 정글 몹 필터링 및 제거
-    const nonJungleObjs = nowObjs.filter(o => {
-        if (o.type === 'object') {
-            const src = o.src ? o.src.toLowerCase() : '';
-            return !(src.includes('gromp') || 
-                     src.includes('wolf') || 
-                     src.includes('raptor') || 
-                     src.includes('krug') || 
-                     src.includes('scuttler') || 
-                     src.includes('blue') || 
-                     src.includes('red'));
+    // 기존 맵 위의 정글 몹 및 잔여 선택/화살표 컨트롤 정리
+    const nonJungleObjs = [];
+    nowObjs.forEach(o => {
+        if (isJungleCampObj(o)) {
+            if (selectedObjUid === o.uid) {
+                selectedObjUid = null;
+            }
+            const el = document.getElementById(o.uid);
+            if (el) el.remove();
+            const startEl = document.getElementById(`start_${o.uid}`);
+            if (startEl) startEl.remove();
+            const endEl = document.getElementById(`end_${o.uid}`);
+            if (endEl) endEl.remove();
+            const lineEl = svgLayer.querySelector(`line[data-uid="${o.uid}"]`);
+            if (lineEl) lineEl.remove();
+        } else {
+            nonJungleObjs.push(o);
         }
-        return true;
     });
 
     const newCamps = camps.map((camp, idx) => ({
-        type: camp.type,
-        uid: "monster_camp_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5) + "_" + idx,
+        type: camp.type || 'object',
+        uid: `monster_camp_${idx}`,
         src: camp.src,
         x: camp.x,
         y: camp.y,
         minionType: camp.minionType,
+        dimmed: Boolean(camp.dimmed),
         arrow: { hasArrow: false, dx: 0, dy: 0 }
     }));
 
@@ -3635,6 +3673,167 @@ let isTutorialActive = false;
 let currentTutorialStepIdx = 0;
 let tutorialPrevLeftTab = null;
 let tutorialPrevRightTab = null;
+let tutorialSavedBoardState = null;
+let tutorialDemoTimer = null;
+
+function createTutorialDemoSnapshot() {
+    if (!currentVersion) {
+        currentVersion = '14.24.1';
+    }
+
+    const step1 = [
+        // 블루팀 5인 (team: 'blue', 리 신/쓰레쉬 이동 화살표 포함)
+        { type: 'champion', uid: 'champ_demo_blue_top', champId: 'Gnar', team: 'blue', x: 338, y: 146, arrow: { hasArrow: false, dx: 0, dy: 0 } },
+        { type: 'champion', uid: 'champ_demo_blue_jg', champId: 'LeeSin', team: 'blue', x: 678, y: 430, arrow: { hasArrow: true, dx: 48, dy: 28 } },
+        { type: 'champion', uid: 'champ_demo_blue_mid', champId: 'Ahri', team: 'blue', x: 562, y: 336, arrow: { hasArrow: false, dx: 0, dy: 0 } },
+        { type: 'champion', uid: 'champ_demo_blue_adc', champId: 'Jinx', team: 'blue', x: 838, y: 578, arrow: { hasArrow: false, dx: 0, dy: 0 } },
+        { type: 'champion', uid: 'champ_demo_blue_sup', champId: 'Thresh', team: 'blue', x: 775, y: 518, arrow: { hasArrow: true, dx: -26, dy: -40 } },
+
+        // 레드팀 5인 (team: 'red')
+        { type: 'champion', uid: 'champ_demo_red_top', champId: 'Renekton', team: 'red', x: 392, y: 112, arrow: { hasArrow: false, dx: 0, dy: 0 } },
+        { type: 'champion', uid: 'champ_demo_red_jg', champId: 'Viego', team: 'red', x: 762, y: 398, arrow: { hasArrow: false, dx: 0, dy: 0 } },
+        { type: 'champion', uid: 'champ_demo_red_mid', champId: 'Orianna', team: 'red', x: 618, y: 294, arrow: { hasArrow: false, dx: 0, dy: 0 } },
+        { type: 'champion', uid: 'champ_demo_red_adc', champId: 'Kaisa', team: 'red', x: 892, y: 526, arrow: { hasArrow: false, dx: 0, dy: 0 } },
+        { type: 'champion', uid: 'champ_demo_red_sup', champId: 'Nautilus', team: 'red', x: 832, y: 466, arrow: { hasArrow: false, dx: 0, dy: 0 } },
+
+        // 미지정 테두리(하얀색) 비교 예시 챔피언 (4단계에서 블루/레드/흰색 3종 테두리 확인용)
+        { type: 'champion', uid: 'champ_demo_neutral_sylas', champId: 'Sylas', team: 'none', x: 492, y: 244, arrow: { hasArrow: false, dx: 0, dy: 0 } },
+
+        // 정글 캠프 & 카정 반투명 예시 (defaultCampPositions 좌표 기반)
+        { type: 'object', uid: 'obj_demo_blue_sentinel', src: 'https://raw.communitydragon.org/latest/game/assets/characters/sru_blue/hud/bluesentinel_circle.png', x: 404, y: 317, dimmed: false, arrow: { hasArrow: false, dx: 0, dy: 0 } },
+        { type: 'object', uid: 'obj_demo_blue_bramble', src: 'https://raw.communitydragon.org/latest/game/assets/characters/sru_red/hud/brambleback_circle.png', x: 615, y: 492, dimmed: false, arrow: { hasArrow: false, dx: 0, dy: 0 } },
+        { type: 'object', uid: 'obj_demo_red_bramble_dim', src: 'https://raw.communitydragon.org/latest/game/assets/characters/sru_red/hud/brambleback_circle.png', x: 569, y: 198, dimmed: true, arrow: { hasArrow: false, dx: 0, dy: 0 } },
+        { type: 'object', uid: 'obj_demo_red_raptor_dim', src: 'images/Crimson_Raptor_Render.png', x: 609, y: 252, dimmed: true, arrow: { hasArrow: false, dx: 0, dy: 0 } },
+        { type: 'object', uid: 'obj_demo_red_sentinel', src: 'https://raw.communitydragon.org/latest/game/assets/characters/sru_blue/hud/bluesentinel_circle.png', x: 783, y: 353, dimmed: false, arrow: { hasArrow: false, dx: 0, dy: 0 } },
+        { type: 'object', uid: 'obj_demo_scuttler_bot', src: 'images/Rift_Scuttler_Render.png', x: 768, y: 442, dimmed: false, arrow: { hasArrow: false, dx: 0, dy: 0 } },
+
+        // 에픽 몬스터 (드래곤 · 공허 유충)
+        { type: 'object', uid: 'obj_demo_dragon', src: 'https://raw.communitydragon.org/latest/game/assets/ux/minimap/icons/dragon.png', x: 742, y: 470, dimmed: false, arrow: { hasArrow: false, dx: 0, dy: 0 } },
+        { type: 'object', uid: 'obj_demo_grub', src: 'https://raw.communitydragon.org/latest/game/assets/ux/minimap/icons/grub.png', x: 454, y: 212, dimmed: false, arrow: { hasArrow: false, dx: 0, dy: 0 } },
+
+        // 미드 · 바텀 미니언 웨이브
+        { type: 'minion', uid: 'minion_demo_mid_blue', src: 'images/Order_Minion_Melee_Render.png', minionType: 'minion-blue', x: 575, y: 326, arrow: { hasArrow: false, dx: 0, dy: 0 } },
+        { type: 'minion', uid: 'minion_demo_mid_red', src: 'images/Chaos_Minion_Melee_Render.png', minionType: 'minion-red', x: 598, y: 310, arrow: { hasArrow: false, dx: 0, dy: 0 } },
+        { type: 'minion', uid: 'minion_demo_bot_blue', src: 'images/Order_Minion_Melee_Render.png', minionType: 'minion-blue', x: 856, y: 560, arrow: { hasArrow: false, dx: 0, dy: 0 } },
+        { type: 'minion', uid: 'minion_demo_bot_red', src: 'images/Chaos_Minion_Melee_Render.png', minionType: 'minion-red', x: 878, y: 540, arrow: { hasArrow: false, dx: 0, dy: 0 } },
+
+        // 강가 시야 장악 와드 (제어 와드 · 노랑 와드)
+        { type: 'ward', uid: 'ward_demo_control', src: 'https://raw.communitydragon.org/latest/game/assets/items/icons2d/2055_class_t1_controlward.png', x: 686, y: 488, arrow: { hasArrow: false, dx: 0, dy: 0 } },
+        { type: 'ward', uid: 'ward_demo_yellow', src: 'https://raw.communitydragon.org/latest/game/assets/items/icons2d/3340_class_t1_wardingtotem.png', x: 732, y: 416, arrow: { hasArrow: false, dx: 0, dy: 0 } },
+
+        // 스마트 핑
+        { type: 'ping', uid: 'ping_demo_omw', src: 'https://raw.communitydragon.org/latest/game/assets/ux/minimap/pings/on_my_way_new.png', x: 724, y: 466, arrow: { hasArrow: false, dx: 0, dy: 0 } },
+        { type: 'ping', uid: 'ping_demo_target', src: 'https://raw.communitydragon.org/latest/game/assets/ux/minimap/pings/target.png', x: 758, y: 474, arrow: { hasArrow: false, dx: 0, dy: 0 } },
+        { type: 'ping', uid: 'ping_demo_warded', src: 'https://raw.communitydragon.org/latest/game/assets/ux/minimap/pings/area_is_warded_small_red_new.png', x: 714, y: 404, arrow: { hasArrow: false, dx: 0, dy: 0 } },
+        { type: 'ping', uid: 'ping_demo_retreat', src: 'https://raw.communitydragon.org/latest/game/assets/ux/minimap/pings/retreat.png', x: 378, y: 128, arrow: { hasArrow: false, dx: 0, dy: 0 } },
+
+        // 정글 진입 & 미드 로밍 펜 곡선 동선 + 자유 화살표
+        {
+            type: 'pen_stroke',
+            uid: 'stroke_demo_jg_path',
+            color: '#00e5ff',
+            width: 4,
+            points: [
+                { x: 590, y: 465 },
+                { x: 618, y: 446 },
+                { x: 646, y: 432 },
+                { x: 672, y: 428 }
+            ]
+        },
+        {
+            type: 'pen_stroke',
+            uid: 'stroke_demo_mid_roam',
+            color: '#ffeb3b',
+            width: 4,
+            points: [
+                { x: 568, y: 344 },
+                { x: 615, y: 374 },
+                { x: 662, y: 405 },
+                { x: 696, y: 432 }
+            ]
+        },
+        {
+            type: 'free_arrow',
+            uid: 'arrow_demo_engage',
+            x: 780,
+            y: 500,
+            arrow: { hasArrow: true, dx: -36, dy: -28 }
+        }
+    ];
+
+    // Step 2: 드래곤 둥지 합류 교전 (동일 uid 기반 이동 + 반투명 잔상 & 점선 궤적)
+    const step2Positions = {
+        champ_demo_blue_top: { x: 418, y: 224 },
+        champ_demo_blue_jg: { x: 726, y: 462 },
+        champ_demo_blue_mid: { x: 694, y: 424 },
+        champ_demo_blue_adc: { x: 768, y: 524 },
+        champ_demo_blue_sup: { x: 742, y: 488 },
+        champ_demo_red_top: { x: 448, y: 178 },
+        champ_demo_red_jg: { x: 754, y: 452 },
+        champ_demo_red_mid: { x: 718, y: 376 },
+        champ_demo_red_adc: { x: 804, y: 488 },
+        champ_demo_red_sup: { x: 776, y: 466 }
+    };
+
+    const step2 = step1
+        .filter(o => o.type !== 'pen_stroke' && o.type !== 'free_arrow')
+        .map(o => {
+            const copy = JSON.parse(JSON.stringify(o));
+            if (copy.arrow) {
+                copy.arrow = { hasArrow: false, dx: 0, dy: 0 };
+            }
+            if (step2Positions[copy.uid]) {
+                copy.x = step2Positions[copy.uid].x;
+                copy.y = step2Positions[copy.uid].y;
+            }
+            return copy;
+        });
+
+    return {
+        timelineData: [step1, step2],
+        currentStepIndex: 0,
+        myTeamSide: 'blue',
+        bluePreset: ['Gnar', 'LeeSin', 'Ahri', 'Jinx', 'Thresh'],
+        redPreset: ['Renekton', 'Viego', 'Orianna', 'Kaisa', 'Nautilus'],
+        currentMode: 'map',
+        selectedScreenshotId: null,
+        showGhostChampions: true
+    };
+}
+
+function applyTutorialStepDemo(stepIdx) {
+    if (tutorialDemoTimer) {
+        clearTimeout(tutorialDemoTimer);
+        tutorialDemoTimer = null;
+    }
+
+    if (!Array.isArray(timelineData) || timelineData.length === 0) return;
+
+    if (stepIdx === 7 && timelineData.length > 1) {
+        // 8단계: Step 1 -> Step 2 드래곤 교전 합류 애니메이션 및 잔상/점선 시연
+        currentStepIndex = 0;
+        selectedObjUid = null;
+        renderScene();
+
+        tutorialDemoTimer = setTimeout(() => {
+            if (!isTutorialActive || currentTutorialStepIdx !== 7) return;
+            showGhostChampions = true;
+            const ghostCb = document.getElementById('show-ghost-checkbox');
+            if (ghostCb) ghostCb.checked = true;
+            nextStep();
+        }, 280);
+        return;
+    }
+
+    if (currentStepIndex !== 0) {
+        triggerStepAnimation();
+        currentStepIndex = 0;
+    }
+
+    // 4단계: 리 신을 선택 강조하여 화살표 핸들 + 블루/레드/흰색 테두리 + 반투명 캠프 시연
+    selectedObjUid = stepIdx === 3 ? 'champ_demo_blue_jg' : null;
+    renderScene();
+}
 
 const TUTORIAL_STEPS = [
     {
@@ -3642,8 +3841,8 @@ const TUTORIAL_STEPS = [
         title: '🗺️ 소환사의 협곡 전략 보드 오리엔테이션',
         target: '#map-area',
         preferCenter: true,
-        desc: '소환사의 협곡 맵 위에 <strong>챔피언 · 와드 · 오브젝트</strong>를 배치하고, 펜과 화살표로 동선과 교전 구도를 시각적으로 설계할 수 있는 전략 보드입니다.',
-        tip: '<strong>핵심 조작</strong>: 마우스 <kbd>휠</kbd>로 확대/축소하고, 배경을 <strong>우클릭 드래그</strong>하여 맵을 자유롭게 이동(패닝)할 수 있습니다.'
+        desc: '소환사의 협곡 맵 위에 <strong>드래곤 교전 실전 예제</strong>가 펼쳐졌습니다. 챔피언·와드·정글 캠프·미니언을 배치하고 펜과 화살표로 동선과 교전 구도를 시각적으로 설계할 수 있습니다.',
+        tip: '<strong>핵심 조작</strong>: 마우스 <kbd>휠</kbd>로 확대/축소하고, 배경을 <strong>우클릭 드래그</strong>하여 맵을 자유롭게 이동(패닝)할 수 있습니다. 하단의 <strong>🧪 예제 체험</strong>을 누르면 이 예제를 보드에 남기고 바로 조작해 볼 수 있습니다.'
     },
     {
         category: '좌측 패널',
@@ -3660,7 +3859,7 @@ const TUTORIAL_STEPS = [
         category: '상단 툴바',
         title: '✏️ 선택 · 펜 · 화살표 · 지우개 & 캠프젠',
         target: '#top-toolbar',
-        desc: '숫자키 <kbd>1</kbd> <strong>선택</strong>, <kbd>2</kbd> <strong>펜</strong>, <kbd>3</kbd> <strong>화살표</strong>, <kbd>4</kbd> <strong>지우개</strong>로 도구를 즉시 전환할 수 있으며, <kbd>C</kbd> 키는 오브젝트를 유지한 채 선과 화살표만 지웁니다. 우측의 <strong>🌲 캠프젠</strong>은 정글 몬스터를 기본 위치에 한 번에 생성합니다.',
+        desc: '맵의 노란색·하늘색 곡선처럼 자유롭게 동선을 그리고, 숫자키 <kbd>1</kbd> <strong>선택</strong>, <kbd>2</kbd> <strong>펜</strong>, <kbd>3</kbd> <strong>화살표</strong>, <kbd>4</kbd> <strong>지우개</strong>로 도구를 즉시 전환합니다. <kbd>C</kbd> 키는 오브젝트는 유지한 채 선과 화살표만 지우며, <strong>🌲 캠프젠</strong>은 정글 캠프를 일괄 배치합니다.',
         tip: '<strong>팁</strong>: <strong>👆 선택(1)</strong> 모드에서는 실수로 그림이 그려지지 않아 챔피언과 화살표 핸들 위치 조정에 편리합니다. <kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Shift+Z</kbd>로 실행 취소/재실행을 지원합니다.'
     },
     {
@@ -3668,8 +3867,8 @@ const TUTORIAL_STEPS = [
         title: '🎯 챔피언 팀 테두리 전환 & 캠프 반투명 토글',
         target: '#rift-map',
         preferCenter: true,
-        desc: '맵에 배치된 <strong>챔피언을 더블클릭</strong>하면 테두리가 <code>⚪ 흰색 → 🔵 블루 → 🔴 레드</code> 순으로 바뀝니다(우클릭 메뉴에서도 선택 가능). <strong>정글 캠프나 오브젝트를 더블클릭</strong>하면 반투명 상태로 전환되어 카운터 정글·처치 여부를 직관적으로 표시할 수 있습니다.',
-        tip: '<strong>화살표 연결</strong>: 배치된 챔피언이나 오브젝트를 우클릭한 뒤 <strong>➤ 화살표 추가/제거</strong>를 누르면 이동 방향 화살표 핸들이 붙습니다.'
+        desc: '맵 중앙의 리 신(블루)·비에고(레드)·사일러스(흰색)처럼 <strong>챔피언을 더블클릭</strong>하면 테두리가 <code>⚪ 흰색 → 🔵 블루 → 🔴 레드</code> 순으로 바뀝니다. 또한 위쪽 <strong>반투명한 적 레드·칼날부리</strong>처럼 <strong>정글 캠프/오브젝트를 더블클릭</strong>하면 처치·카정 표시용 반투명으로 전환됩니다.',
+        tip: '<strong>화살표 연결</strong>: 리 신과 쓰레쉬처럼 우클릭 메뉴의 <strong>➤ 화살표 추가/제거</strong>로 이동 방향 화살표 핸들을 붙일 수 있습니다.'
     },
     {
         category: '우측 팀/핑 패널',
@@ -3679,7 +3878,7 @@ const TUTORIAL_STEPS = [
         onEnter: () => {
             if (typeof switchRightTab === 'function') switchRightTab('team');
         },
-        desc: '<strong>Blue Team / Red Team</strong> 상자 자체를 맵으로 드래그하면 등록된 5명의 챔피언을 한 번에 배치할 수 있고, <strong>Smart Pings</strong>로 위험/지원/미아 핑을 찍을 수 있습니다. 아래 <strong>📋 전술 페이지</strong>에서는 모든 스텝을 저장·불러오기·수정·삭제할 수 있습니다.',
+        desc: '<strong>Blue Team / Red Team</strong> 상자에 예제로 채워진 5명씩의 조합을 맵으로 통째로 드래그해 배치할 수 있고, <strong>Smart Pings</strong>로 강가의 가는중/타겟/와드경고 핑을 찍을 수 있습니다. 아래 <strong>📋 전술 페이지</strong>에서는 모든 스텝을 저장·불러오기·수정·삭제할 수 있습니다.',
         tip: '<strong>팁</strong>: 기존 전술을 불러온 뒤 맵을 수정했다면 <strong>✏️ 수정</strong> 버튼 한 번으로 현재 상태와 이름을 덮어쓸 수 있습니다.'
     },
     {
@@ -3690,8 +3889,8 @@ const TUTORIAL_STEPS = [
         onEnter: () => {
             if (typeof switchRightTab === 'function') switchRightTab('objects');
         },
-        desc: '<strong>오브젝트 탭</strong>에서는 바론·드래곤·전령·유충 같은 에픽 몬스터와 버프/정글 몹, <strong>미니언 웨이브</strong>(웨이브 방향 반전 가능), <strong>와드 · 텔포</strong> 등 유틸리티 아이콘을 맵에 드래그해 배치할 수 있습니다.',
-        tip: '배치된 와드나 미니언 역시 <kbd>Del</kbd> 또는 <kbd>Backspace</kbd> 키로 선택 즉시 삭제할 수 있습니다.'
+        desc: '<strong>오브젝트 탭</strong>에서는 맵 위의 <strong>드래곤·공허 유충</strong>, 정글 버프/캠프 몹, 미드·바텀 <strong>미니언 웨이브</strong>(웨이브 방향 반전 가능), 삼거리·강가 <strong>와드 · 텔포</strong> 아이콘을 맵에 드래그해 배치할 수 있습니다.',
+        tip: '배치된 와드나 미니언 역시 클릭 선택 후 <kbd>Del</kbd> 또는 <kbd>Backspace</kbd> 키로 즉시 삭제할 수 있습니다.'
     },
     {
         category: '아이콘 크기 설정',
@@ -3711,7 +3910,7 @@ const TUTORIAL_STEPS = [
         onEnter: () => {
             if (typeof switchRightTab === 'function') switchRightTab('obs');
         },
-        desc: '<strong>+ Step 추가</strong>로 시간대별 전개 장면을 이어가며 <strong>◀ 이전 / ▶ 다음</strong>(단축키 <kbd>←</kbd> / <kbd>→</kbd>)으로 부드러운 이동 애니메이션을 재생합니다. <strong>이전 위치 잔상</strong>을 켜면 직전 스텝의 출발 위치와 이동 궤적이 점선으로 표시됩니다.',
+        desc: '지금 맵에서 <strong>Step 1 ➔ Step 2 드래곤 합류</strong>가 자동 재생되며 출발 자리의 <strong>반투명 잔상과 이동 점선 궤적</strong>이 함께 표시됩니다. <kbd>←</kbd> / <kbd>→</kbd> 키나 <strong>+ Step 추가</strong>로 전개 장면을 이어갈 수 있습니다.',
         tip: '<strong>OBS 방송 연동</strong>: 우측 <strong>📹 OBS</strong> 탭에서 투명 배경 오버레이 창을 열어 방송 화면 위에 전술 보드를 실시간으로 송출할 수 있습니다.'
     }
 ];
@@ -3726,6 +3925,11 @@ function startTutorial(stepIndex = 0) {
     const overlay = document.getElementById('tutorial-overlay');
     if (!overlay) return;
 
+    if (tutorialDemoTimer) {
+        clearTimeout(tutorialDemoTimer);
+        tutorialDemoTimer = null;
+    }
+
     if (typeof hideHelpModal === 'function') hideHelpModal();
     if (typeof closeMobileSidebars === 'function') closeMobileSidebars();
     if (typeof closeMobileDropdown === 'function') closeMobileDropdown();
@@ -3733,7 +3937,22 @@ function startTutorial(stepIndex = 0) {
     if (!isTutorialActive) {
         tutorialPrevLeftTab = getActiveTabId('#sidebar-left', 'champs');
         tutorialPrevRightTab = getActiveTabId('#right-panel-wrapper', 'team');
+        tutorialSavedBoardState = {
+            snapshot: createCurrentBoardSnapshot(),
+            selectedObjUid: selectedObjUid,
+            currentTacticId: currentTacticId,
+            showGhostChampions: showGhostChampions,
+            historyStack: JSON.parse(JSON.stringify(historyStack || [])),
+            historyPointer: historyPointer
+        };
     }
+
+    // 최초 진입 및 재실행 모두 데모 보드·히스토리를 멱등하게 초기화
+    historyStack = [];
+    historyPointer = -1;
+    currentTacticId = null;
+    renderTacticsUI();
+    applyBoardSnapshot(createTutorialDemoSnapshot(), true);
 
     isTutorialActive = true;
     overlay.classList.add('active');
@@ -3741,8 +3960,12 @@ function startTutorial(stepIndex = 0) {
     goToTutorialStep(stepIndex);
 }
 
-function endTutorial() {
+function endTutorial(restoreOriginal = true) {
     const overlay = document.getElementById('tutorial-overlay');
+    if (tutorialDemoTimer) {
+        clearTimeout(tutorialDemoTimer);
+        tutorialDemoTimer = null;
+    }
     if (!isTutorialActive && (!overlay || !overlay.classList.contains('active'))) return;
 
     isTutorialActive = false;
@@ -3751,8 +3974,27 @@ function endTutorial() {
         overlay.setAttribute('aria-hidden', 'true');
     }
 
-    if (tutorialPrevLeftTab && typeof switchLeftTab === 'function') {
-        switchLeftTab(tutorialPrevLeftTab);
+    if (restoreOriginal && tutorialSavedBoardState) {
+        const saved = tutorialSavedBoardState;
+        applyBoardSnapshot(saved.snapshot, false);
+        selectedObjUid = saved.selectedObjUid;
+        currentTacticId = saved.currentTacticId;
+        showGhostChampions = saved.showGhostChampions;
+        const ghostCb = document.getElementById('show-ghost-checkbox');
+        if (ghostCb) ghostCb.checked = showGhostChampions;
+        historyStack = JSON.parse(JSON.stringify(saved.historyStack || []));
+        historyPointer = saved.historyPointer;
+        renderTacticsUI();
+        renderScene();
+    }
+    tutorialSavedBoardState = null;
+
+    // 예제 체험 종료 시 이전 탭이 스크린샷이었다면 협곡 모드를 덮어쓰지 않도록 챔피언 탭으로 복귀
+    const nextLeftTab = (!restoreOriginal && tutorialPrevLeftTab === 'screenshots')
+        ? 'champs'
+        : tutorialPrevLeftTab;
+    if (nextLeftTab && typeof switchLeftTab === 'function') {
+        switchLeftTab(nextLeftTab);
     }
     if (tutorialPrevRightTab && typeof switchRightTab === 'function') {
         switchRightTab(tutorialPrevRightTab);
@@ -3761,10 +4003,15 @@ function endTutorial() {
     tutorialPrevRightTab = null;
 }
 
+function keepTutorialDemoAndClose() {
+    endTutorial(false);
+    showToast('🧪 튜토리얼 예제를 보드에 남겼습니다. 자유롭게 조작해 보세요!');
+}
+
 function nextTutorialStep() {
     if (!isTutorialActive) return;
     if (currentTutorialStepIdx >= TUTORIAL_STEPS.length - 1) {
-        endTutorial();
+        endTutorial(true);
         return;
     }
     goToTutorialStep(currentTutorialStepIdx + 1);
@@ -3779,6 +4026,8 @@ function goToTutorialStep(idx) {
     const clampedIdx = Math.max(0, Math.min(TUTORIAL_STEPS.length - 1, idx));
     currentTutorialStepIdx = clampedIdx;
     const step = TUTORIAL_STEPS[clampedIdx];
+
+    applyTutorialStepDemo(clampedIdx);
 
     if (typeof step.onEnter === 'function') {
         step.onEnter();
@@ -3866,14 +4115,47 @@ function positionTutorialElements() {
     const step = TUTORIAL_STEPS[currentTutorialStepIdx];
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    const margin = 14;
+    const margin = 16;
     const pad = 6;
-    const gap = 16;
 
     const rect = getTutorialTargetRect(step);
     const cardRect = card.getBoundingClientRect();
-    const cw = cardRect.width || Math.min(390, vw - 24);
+    const cw = cardRect.width || Math.min(280, vw - 24);
     const ch = cardRect.height || 260;
+
+    const clampLeft = (val) => Math.max(margin, Math.min(val, vw - cw - margin));
+    const clampTop = (val) => Math.max(margin, Math.min(val, vh - ch - margin));
+
+    // #map-area 좌측 여백(1번) / 우측 여백(2번) 좌표 계산
+    const mapAreaEl = document.getElementById('map-area');
+    const riftMapEl = document.getElementById('rift-map');
+    const areaRect = mapAreaEl ? mapAreaEl.getBoundingClientRect() : null;
+    const riftRect = riftMapEl ? riftMapEl.getBoundingClientRect() : null;
+
+    let pos1Left = clampLeft(margin);
+    let pos2Left = clampLeft(vw - cw - margin);
+    let posTop = clampTop(Math.round((vh - ch) * 0.42));
+
+    if (areaRect && areaRect.width > 0 && areaRect.height > 0) {
+        if (riftRect && riftRect.width > 0) {
+            const leftGap = Math.max(0, riftRect.left - areaRect.left);
+            const rightGap = Math.max(0, areaRect.right - riftRect.right);
+            pos1Left = clampLeft(
+                leftGap >= cw + 16
+                    ? areaRect.left + (leftGap - cw) / 2
+                    : areaRect.left + 14
+            );
+            pos2Left = clampLeft(
+                rightGap >= cw + 16
+                    ? riftRect.right + (rightGap - cw) / 2
+                    : areaRect.right - cw - 14
+            );
+        } else {
+            pos1Left = clampLeft(areaRect.left + 14);
+            pos2Left = clampLeft(areaRect.right - cw - 14);
+        }
+        posTop = clampTop(Math.round(areaRect.top + (areaRect.height - ch) * 0.42));
+    }
 
     if (!rect || rect.right < 0 || rect.left > vw || rect.bottom < 0 || rect.top > vh) {
         spotlight.style.opacity = '0';
@@ -3882,8 +4164,8 @@ function positionTutorialElements() {
         spotlight.style.width = '0px';
         spotlight.style.height = '0px';
 
-        card.style.left = `${Math.max(margin, (vw - cw) / 2)}px`;
-        card.style.top = `${Math.max(margin, (vh - ch) / 2)}px`;
+        card.style.left = `${pos1Left}px`;
+        card.style.top = `${posTop}px`;
         return;
     }
 
@@ -3900,37 +4182,11 @@ function positionTutorialElements() {
     spotlight.style.width = `${spotW}px`;
     spotlight.style.height = `${spotH}px`;
 
-    const clampLeft = (val) => Math.max(margin, Math.min(val, vw - cw - margin));
-    const clampTop = (val) => Math.max(margin, Math.min(val, vh - ch - margin));
-
-    let cardLeft;
-    let cardTop;
-
-    const isLargeViewportTarget = step.preferCenter || (spotW > vw * 0.58 && spotH > vh * 0.55);
-    if (isLargeViewportTarget) {
-        cardLeft = clampLeft((vw - cw) / 2);
-        cardTop = clampTop(vh - ch - 30);
-    } else if (vw - spotRight >= cw + gap + margin) {
-        // 오른쪽 여유 공간
-        cardLeft = spotRight + gap;
-        cardTop = clampTop(spotTop + (spotH - ch) / 2);
-    } else if (spotLeft >= cw + gap + margin) {
-        // 왼쪽 여유 공간
-        cardLeft = spotLeft - cw - gap;
-        cardTop = clampTop(spotTop + (spotH - ch) / 2);
-    } else if (vh - spotBottom >= ch + gap + margin) {
-        // 아래쪽 여유 공간
-        cardLeft = clampLeft(spotLeft + (spotW - cw) / 2);
-        cardTop = spotBottom + gap;
-    } else if (spotTop >= ch + gap + margin) {
-        // 위쪽 여유 공간
-        cardLeft = clampLeft(spotLeft + (spotW - cw) / 2);
-        cardTop = spotTop - ch - gap;
-    } else {
-        // 화면 중앙 하단 Fallback
-        cardLeft = clampLeft((vw - cw) / 2);
-        cardTop = clampTop(vh - ch - margin);
-    }
+    const spotCenterX = spotLeft + spotW / 2;
+    const cardLeft = spotCenterX > vw * 0.65 ? pos2Left : pos1Left;
+    const cardTop = step.target === '#top-toolbar'
+        ? clampTop(Math.max(posTop, spotBottom + 14))
+        : posTop;
 
     card.style.left = `${cardLeft}px`;
     card.style.top = `${cardTop}px`;

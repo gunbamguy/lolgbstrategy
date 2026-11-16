@@ -84,52 +84,40 @@
                 <button class="tool-btn" onclick="redo()" title="Ctrl+Shift+Z">↷ Redo</button>
             </div>
 
-            <div class="toolbar-group" style="border-left: 1px solid #444; padding-left: 10px;">
+            <div class="toolbar-group">
                 <button id="tool-select" class="tool-btn" onclick="setDrawingTool('select')" title="객체 선택 및 이동 모드 (단축키: 1)">👆 선택</button>
                 <button id="tool-pen" class="tool-btn active" onclick="setDrawingTool('pen')" title="자유 곡선 그리기 (단축키: 2)">✏️ 펜</button>
                 <button id="tool-arrow" class="tool-btn" onclick="setDrawingTool('arrow')" title="화살표 그리기 (단축키: 3)">↗ 화살표</button>
                 <button id="tool-eraser" class="tool-btn" onclick="setDrawingTool('eraser')" title="그려진 선 지우기 (단축키: 4)">🧼 지우개</button>
-                <button class="tool-btn" onclick="clearDrawingsInCurrentStep()" title="챔피언/오브젝트는 유지하고 현재 스텝의 선과 화살표만 모두 지웁니다 (단축키: C)">🧹 선만 지우기</button>
+                <button class="tool-btn" onclick="clearDrawingsInCurrentStep()" title="챔피언/오브젝트는 유지하고 현재 스텝의 선과 화살표만 모두 지웁니다 (단축키: C)">🧹 선지우기</button>
             </div>
 
-            <div class="toolbar-group" style="border-left: 1px solid #444; padding-left: 10px;">
-                <div class="color-picker-group" style="display: flex; gap: 5px; align-items: center;">
-                    <span style="font-size: 0.82em; color: #999; margin-right: 3px;">색상:</span>
+            <div class="toolbar-group">
+                <div class="color-picker-group" style="display: flex; gap: 4px; align-items: center;" title="펜 색상">
                     <div class="color-dot" onclick="setPenColor('#ffeb3b')" style="background-color: #ffeb3b; width: 14px; height: 14px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; box-sizing: border-box;" data-color="#ffeb3b"></div>
                     <div class="color-dot" onclick="setPenColor('#00e5ff')" style="background-color: #00e5ff; width: 14px; height: 14px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; box-sizing: border-box;" data-color="#00e5ff"></div>
                     <div class="color-dot active" onclick="setPenColor('#ff5252')" style="background-color: #ff5252; width: 14px; height: 14px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; box-sizing: border-box;" data-color="#ff5252"></div>
                     <div class="color-dot" onclick="setPenColor('#69f0ae')" style="background-color: #69f0ae; width: 14px; height: 14px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; box-sizing: border-box;" data-color="#69f0ae"></div>
                     <div class="color-dot" onclick="setPenColor('#ff4081')" style="background-color: #ff4081; width: 14px; height: 14px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; box-sizing: border-box;" data-color="#ff4081"></div>
                 </div>
-            </div>
-            
-            <div class="toolbar-group" style="border-left: 1px solid #444; padding-left: 10px;">
-                <div class="width-picker-group" style="display: flex; gap: 5px; align-items: center;">
-                    <span style="font-size: 0.82em; color: #999; margin-right: 3px;">두께:</span>
+                <span style="width: 1px; height: 14px; background: #444; margin: 0 2px;" aria-hidden="true"></span>
+                <div class="width-picker-group" style="display: flex; gap: 4px; align-items: center;" title="펜 두께">
                     <button class="width-btn active" onclick="setPenWidth(4)" style="background: #333; color: white; border: 1px solid #444; width: 22px; height: 22px; border-radius: 3px; cursor: pointer; font-size: 10px; display: flex; align-items: center; justify-content: center; padding: 0;" data-width="4">4px</button>
                     <button class="width-btn" onclick="setPenWidth(6)" style="background: #333; color: white; border: 1px solid #444; width: 22px; height: 22px; border-radius: 3px; cursor: pointer; font-size: 10px; display: flex; align-items: center; justify-content: center; padding: 0;" data-width="6">6px</button>
                     <button class="width-btn" onclick="setPenWidth(8)" style="background: #333; color: white; border: 1px solid #444; width: 22px; height: 22px; border-radius: 3px; cursor: pointer; font-size: 10px; display: flex; align-items: center; justify-content: center; padding: 0;" data-width="8">8px</button>
                 </div>
             </div>
 
-            <div class="toolbar-group desktop-only-group" style="border-left: 1px solid #444; padding-left: 10px; color: #aaa; font-size: 0.85em; gap: 5px;">
-                <span>단축키: <kbd style="background:#444; padding:2px 4px; border-radius:3px;">1~4</kbd> 도구 | <kbd style="background:#444; padding:2px 4px; border-radius:3px;">C</kbd> 선지우기 | <kbd style="background:#444; padding:2px 4px; border-radius:3px;">←/→</kbd> 스텝 | <kbd style="background:#444; padding:2px 4px; border-radius:3px;">Del</kbd> 삭제</span>
-            </div>
-            
-            <div class="toolbar-group" style="border-left: 1px solid #444; padding-left: 10px;">
-                <button class="tool-btn btn-blue" onclick="showHelpModal()">❓ 조작 도움말</button>
+            <div class="toolbar-group">
+                <button class="tool-btn btn-blue" onclick="showHelpModal()" title="마우스/단축키 조작 도움말">❓ 도움말</button>
+                <button class="tool-btn btn-green" onclick="spawnAllCamps()" title="기본 정글 캠프 일괄 배치">🌲 캠프젠</button>
             </div>
 
-            <div class="toolbar-group" style="border-left: 1px solid #444; padding-left: 10px;">
-                <button class="tool-btn btn-green" onclick="spawnAllCamps()">🌲 캠프젠</button>
-            </div>
-
-            <div class="toolbar-group" style="border-left: 1px solid #444; padding-left: 10px; margin-left: auto; display: flex; align-items: center; gap: 8px;">
+            <div class="toolbar-group" style="margin-left: auto;">
                 <!-- 📱 모바일 우측 사이드바 열기 버튼 -->
                 <button id="btn-toggle-right-sidebar" class="mobile-toggle-btn" onclick="toggleMobileSidebar('right')" title="오브젝트/크기 설정">👾 오브젝트</button>
-                <a href="../index.html" class="tool-btn" style="background: rgba(200, 155, 60, 0.2); border: 1px solid #c89b3c; color: #f0e6d2; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; font-weight: bold; padding: 4px 10px; border-radius: 4px;">🏠 메인 허브</a>
+                <a href="../index.html" class="tool-btn" style="background: rgba(200, 155, 60, 0.2); border: 1px solid #c89b3c; color: #f0e6d2; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; font-weight: bold; border-radius: 4px;">🏠 메인 허브</a>
                 <button id="btn-start-tutorial" class="tool-btn tutorial-launch-btn" onclick="startTutorial()" title="단계별 인터랙티브 튜토리얼 시작">🎓 튜토리얼</button>
-                <span style="color:#888; font-size:0.9em; font-weight: bold;" class="desktop-only-text">롤 전략보드</span>
             </div>
         </div>
 
@@ -441,6 +429,7 @@
             <div id="tutorial-dots" class="tutorial-dots"></div>
             <div class="tutorial-card-footer">
                 <button type="button" class="tutorial-btn secondary" onclick="endTutorial()">건너뛰기</button>
+                <button type="button" id="tutorial-try-btn" class="tutorial-btn demo" onclick="keepTutorialDemoAndClose()" title="현재 튜토리얼 예제를 맵에 남기고 직접 조작해 봅니다">🧪 예제 체험</button>
                 <div class="tutorial-nav-group">
                     <button type="button" id="tutorial-prev-btn" class="tutorial-btn nav" onclick="prevTutorialStep()">◀ 이전</button>
                     <button type="button" id="tutorial-next-btn" class="tutorial-btn primary" onclick="nextTutorialStep()">다음 ▶</button>

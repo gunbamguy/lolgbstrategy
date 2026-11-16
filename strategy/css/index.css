@@ -228,16 +228,20 @@ body {
     background: linear-gradient(180deg, #1b202c 0%, #11151e 100%);
     display: flex;
     align-items: center;
-    padding: 0 12px;
+    padding: 0 8px;
     border-bottom: 1px solid rgba(200, 155, 60, 0.35);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
-    gap: 10px;
-    overflow: hidden;
+    gap: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
 }
-.toolbar-group { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+#top-toolbar::-webkit-scrollbar { display: none; }
+.toolbar-group { display: flex; gap: 4px; align-items: center; flex-shrink: 0; }
+.toolbar-group + .toolbar-group { border-left: 1px solid #444; padding-left: 7px; }
 .tool-btn {
     background: #333; color: #eee; border: 1px solid #444;
-    padding: 5px 12px; border-radius: 3px; cursor: pointer; font-size: 0.9em;
+    padding: 4px 8px; border-radius: 3px; cursor: pointer; font-size: 12px;
     white-space: nowrap;
 }
 .tool-btn:hover { background: #444; }
@@ -967,7 +971,8 @@ svg line.selected {
     border: 1px solid #0ac8b9;
     color: #e0fbf8;
     font-weight: bold;
-    padding: 4px 10px;
+    padding: 4px 8px;
+    font-size: 12px;
     border-radius: 4px;
     display: inline-flex;
     align-items: center;
@@ -1014,13 +1019,13 @@ svg line.selected {
 
 .tutorial-card {
     position: fixed;
-    width: 390px;
+    width: 280px;
     max-width: calc(100vw - 24px);
     box-sizing: border-box;
     background: linear-gradient(160deg, #161d2c 0%, #0d121c 65%, #090c14 100%);
     border: 1.5px solid #c89b3c;
     border-radius: 10px;
-    padding: 16px 18px;
+    padding: 14px 16px;
     z-index: 2502;
     box-shadow:
         0 14px 40px rgba(0, 0, 0, 0.85),
@@ -1151,20 +1156,23 @@ svg line.selected {
 
 .tutorial-card-footer {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
+    gap: 6px;
 }
 .tutorial-nav-group {
     display: flex;
-    gap: 6px;
+    gap: 5px;
+    margin-left: auto;
 }
 
 .tutorial-btn {
     border-radius: 5px;
-    padding: 6px 12px;
-    font-size: 12.5px;
+    padding: 5px 8px;
+    font-size: 11.5px;
     font-weight: bold;
+    white-space: nowrap;
     cursor: pointer;
     transition: all 0.18s ease;
 }
@@ -1176,6 +1184,18 @@ svg line.selected {
 .tutorial-btn.secondary:hover {
     background: rgba(255, 255, 255, 0.12);
     color: #e2e8f5;
+}
+.tutorial-btn.demo {
+    background: linear-gradient(135deg, rgba(200, 155, 60, 0.22) 0%, rgba(154, 116, 38, 0.28) 100%);
+    border: 1px solid #c89b3c;
+    color: #f0e6d2;
+    box-shadow: 0 0 8px rgba(200, 155, 60, 0.22);
+}
+.tutorial-btn.demo:hover {
+    background: linear-gradient(135deg, rgba(200, 155, 60, 0.38) 0%, rgba(154, 116, 38, 0.45) 100%);
+    border-color: #f0e6d2;
+    color: #ffffff;
+    box-shadow: 0 0 12px rgba(200, 155, 60, 0.45);
 }
 .tutorial-btn.nav {
     background: #1b2436;
@@ -1371,6 +1391,7 @@ svg line.selected {
     }
 
     #top-toolbar::-webkit-scrollbar {
+        display: block;
         height: 3px;
     }
 
