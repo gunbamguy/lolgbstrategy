@@ -13,7 +13,7 @@ yarn-error.log*
 AGENTS.md
 .agents/
 .gemini/
-docs/
+docs/adr/
 scripts/
 
 # Operating System & Garbage Files

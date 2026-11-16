@@ -3,6 +3,7 @@
 // ==========================================
 
 const appState = {
+    currentMode: 'rune',
     selectedMainTreeIndex: null,
     selectedSubTreeIndex: null,
     selectedMainRunes: [],
@@ -17,6 +18,9 @@ const appState = {
 
 // 탭 스위칭 제어
 function switchAppMode(mode) {
+    const normalizedMode = mode === 'item' ? 'item' : 'rune';
+    appState.currentMode = normalizedMode;
+
     const tabRune = document.getElementById('tabRuneMode');
     const tabItem = document.getElementById('tabItemMode');
     const btnSwitchRune = document.getElementById('btnSwitchRune');
@@ -27,7 +31,15 @@ function switchAppMode(mode) {
     const appTitle = document.getElementById('appTitle');
     const appSubtitle = document.getElementById('appSubtitle');
 
-    if (mode === 'item') {
+    if (window.history && window.history.replaceState) {
+        const baseUrl = window.location.pathname + window.location.search;
+        const targetHref = normalizedMode === 'item' ? `${baseUrl}#item` : baseUrl;
+        if (`${window.location.pathname}${window.location.search}${window.location.hash}` !== targetHref) {
+            window.history.replaceState(null, '', targetHref);
+        }
+    }
+
+    if (normalizedMode === 'item') {
         if (tabRune) tabRune.classList.remove('active');
         if (tabItem) tabItem.classList.add('active');
         if (btnSwitchRune) btnSwitchRune.classList.remove('active');
@@ -414,6 +426,9 @@ function initUIEvents() {
     if (btnSwitchRune) btnSwitchRune.addEventListener('click', () => switchAppMode('rune'));
     if (btnSwitchItem) btnSwitchItem.addEventListener('click', () => switchAppMode('item'));
 
+    const btnCopyPageLink = document.getElementById('btnCopyPageLink');
+    if (btnCopyPageLink) btnCopyPageLink.addEventListener('click', copyCurrentPageLink);
+
     const updateUIPreview = () => {
         if (textDisplay) {
             textDisplay.textContent = textInput.value;
@@ -554,6 +569,64 @@ function initUIEvents() {
     document.getElementById('btnReset').addEventListener('click', resetAllRunes);
 }
 
+function showRunePageToast(message) {
+    let toast = document.getElementById('pageLinkToast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'pageLinkToast';
+        toast.className = 'page-link-toast';
+        document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.classList.add('show');
+    clearTimeout(toast._hideTimer);
+    toast._hideTimer = setTimeout(() => {
+        toast.classList.remove('show');
+    }, 2200);
+}
+
+function getIndividualPageLink() {
+    const baseUrl = window.location.href.split('#')[0];
+    return appState.currentMode === 'item' ? `${baseUrl}#item` : baseUrl;
+}
+
+function copyCurrentPageLink() {
+    const targetUrl = getIndividualPageLink();
+    const successMsg = appState.currentMode === 'item'
+        ? '🔗 아이템 익스포터 페이지 링크가 복사되었습니다.'
+        : '🔗 룬 익스포터 페이지 링크가 복사되었습니다.';
+
+    const fallbackCopy = () => {
+        const ta = document.createElement('textarea');
+        ta.value = targetUrl;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        ta.setSelectionRange(0, targetUrl.length);
+        let ok = false;
+        try {
+            ok = document.execCommand('copy');
+        } catch (e) {
+            ok = false;
+        } finally {
+            ta.remove();
+        }
+        return ok;
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(targetUrl).then(() => {
+            showRunePageToast(successMsg);
+        }).catch(() => {
+            showRunePageToast(fallbackCopy() ? successMsg : '⚠️ 링크 복사에 실패했습니다.');
+        });
+    } else {
+        showRunePageToast(fallbackCopy() ? successMsg : '⚠️ 링크 복사에 실패했습니다.');
+    }
+}
+
 // FOW 전적 파싱 룬 자동 세팅 수신함수
 // [Fail 11~13 대응] DOM .click() 비동기 엇갈림 근본 차단
 // 방법: 주 빌드는 .click() + data-id 정확 매칭, 보조 빌드는 주 빌드 완전 정착 후 실행
@@ -602,5 +675,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (window.location.hash === '#item') {
         switchAppMode('item');
     }
+
+    window.addEventListener('hashchange', () => {
+        switchAppMode(window.location.hash === '#item' ? 'item' : 'rune');
+    });
 });
 

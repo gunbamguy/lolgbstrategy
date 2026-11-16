@@ -1537,7 +1537,8 @@ function getSavedPresetsFromStorage() {
     const data = localStorage.getItem('lol_strategy_user_presets');
     if (data) {
         try {
-            return JSON.parse(data);
+            const parsed = JSON.parse(data);
+            return Array.isArray(parsed) ? parsed : [];
         } catch(e) {
             return [];
         }
@@ -1546,7 +1547,13 @@ function getSavedPresetsFromStorage() {
 }
 
 function savePresetsToStorage(presets) {
-    localStorage.setItem('lol_strategy_user_presets', JSON.stringify(presets));
+    try {
+        localStorage.setItem('lol_strategy_user_presets', JSON.stringify(presets));
+        return true;
+    } catch (e) {
+        showToast('⚠️ 브라우저 저장 용량이 부족해 프리셋을 저장할 수 없습니다.');
+        return false;
+    }
 }
 
 function saveCurrentPreset() {
@@ -2408,7 +2415,10 @@ function drop(ev) {
             
             const champUid = "champ_" + champKey;
             const currentObjs = timelineData[currentStepIndex];
-            const existing = currentObjs.find(o => o.uid === champUid);
+            const existing = currentObjs.find(o =>
+                o.uid === champUid ||
+                (o.type === 'champion' && o.champId === champKey && resolveChampionTeam(o) === team)
+            );
             
             if (existing) {
                 existing.x = targetX;
@@ -2618,6 +2628,24 @@ document.addEventListener('keydown', (e) => {
         return;
     }
 
+    const ioModal = document.getElementById('io-modal');
+    if (ioModal && ioModal.classList.contains('active')) {
+        if (e.code === 'Escape') {
+            e.preventDefault();
+            hideExportImportModal();
+        }
+        return;
+    }
+
+    const helpModal = document.getElementById('help-modal');
+    if (helpModal && helpModal.classList.contains('active')) {
+        if (e.code === 'Escape') {
+            e.preventDefault();
+            hideHelpModal();
+        }
+        return;
+    }
+
     // 텍스트 입력 필드(검색창, 닉네임 입력 등)에서만 단축키를 방지 (range 슬라이더 등은 제외)
     const isTyping = e.target.tagName === 'TEXTAREA' || 
                      (e.target.tagName === 'INPUT' && (e.target.type === 'text' || e.target.type === 'search' || !e.target.type));
@@ -2686,6 +2714,10 @@ window.addEventListener('click', (e) => {
     const modal = document.getElementById('help-modal');
     if (modal && e.target === modal) {
         hideHelpModal();
+    }
+    const ioModal = document.getElementById('io-modal');
+    if (ioModal && e.target === ioModal) {
+        hideExportImportModal();
     }
 });
 
@@ -4197,6 +4229,1235 @@ window.addEventListener('resize', () => {
         positionTutorialElements();
     }
 });
+
+// ==========================================================================
+// 📦 3단계 고압축 내보내기 / 불러오기 및 2슬롯 백업 시스템 (GUDO1 Deflate Codec)
+// ==========================================================================
+
+const BACKUP_SLOTS_STORAGE_KEY = 'lol_strategy_backup_slots';
+const MAX_BACKUP_SLOTS = 2;
+const PEN_COLOR_DICT = ['#ffeb3b', '#00e5ff', '#ff5252', '#69f0ae', '#ff4081'];
+
+let activeIoTab = 'tactics';
+let currentExportCode = '';
+let currentExportScope = 'tactics';
+let ioRenderToken = 0;
+
+function getAssetDict() {
+    const dict = [];
+    const seen = new Set();
+    const pushUrl = (u) => {
+        if (u && typeof u === 'string' && !seen.has(u)) {
+            seen.add(u);
+            dict.push(u);
+        }
+    };
+    if (typeof tacticsData !== 'undefined') tacticsData.forEach(d => pushUrl(d.src));
+    if (typeof epicMonstersData !== 'undefined') epicMonstersData.forEach(d => pushUrl(d.src));
+    if (typeof buffsData !== 'undefined') buffsData.forEach(d => pushUrl(d.src));
+    if (typeof minionsData !== 'undefined') minionsData.forEach(d => pushUrl(d.src));
+    if (typeof objectsData !== 'undefined') objectsData.forEach(d => pushUrl(d.src));
+    if (typeof defaultCampPositions !== 'undefined') defaultCampPositions.forEach(d => pushUrl(d.src));
+    return dict;
+}
+
+function encodeAssetSrc(src, dict) {
+    if (!src) return '';
+    const idx = dict.indexOf(src);
+    return idx >= 0 ? idx : src;
+}
+
+function decodeAssetSrc(val, dict) {
+    if (typeof val === 'number') return dict[val] || '';
+    if (typeof val === 'string' && val.startsWith('@')) {
+        const idx = parseInt(val.slice(1), 10);
+        return Number.isFinite(idx) ? (dict[idx] || val) : val;
+    }
+    return val || '';
+}
+
+function encodeStrokePoints(points) {
+    if (!Array.isArray(points) || points.length === 0) return [];
+    const firstX = Math.round(points[0].x || 0);
+    const firstY = Math.round(points[0].y || 0);
+    const deltas = [firstX, firstY];
+    let prevX = firstX;
+    let prevY = firstY;
+    for (let i = 1; i < points.length; i++) {
+        const rx = Math.round(points[i].x || 0);
+        const ry = Math.round(points[i].y || 0);
+        if (rx === prevX && ry === prevY) continue;
+        deltas.push(rx - prevX, ry - prevY);
+        prevX = rx;
+        prevY = ry;
+    }
+    return deltas;
+}
+
+function decodeStrokePoints(deltas) {
+    if (!Array.isArray(deltas) || deltas.length < 2) return [];
+    let cx = Number(deltas[0]) || 0;
+    let cy = Number(deltas[1]) || 0;
+    const points = [{ x: cx, y: cy }];
+    for (let i = 2; i + 1 < deltas.length; i += 2) {
+        cx += Number(deltas[i]) || 0;
+        cy += Number(deltas[i + 1]) || 0;
+        points.push({ x: cx, y: cy });
+    }
+    return points;
+}
+
+function trimTrailingDefaults(tuple, minLength) {
+    while (tuple.length > minLength) {
+        const tail = tuple[tuple.length - 1];
+        if (tail === null || tail === undefined || tail === 0 || tail === '') {
+            tuple.pop();
+        } else {
+            break;
+        }
+    }
+    return tuple;
+}
+
+function packTimelineData(steps, dict) {
+    const uidMap = new Map();
+    let uidCounter = 0;
+    const getShortUid = (rawUid) => {
+        if (!rawUid) return uidCounter++;
+        if (uidMap.has(rawUid)) return uidMap.get(rawUid);
+        const shortId = uidCounter++;
+        uidMap.set(rawUid, shortId);
+        return shortId;
+    };
+
+    return (Array.isArray(steps) ? steps : [[]]).map(stepObjs => {
+        if (!Array.isArray(stepObjs)) return [];
+        const packed = [];
+        stepObjs.forEach(o => {
+            if (!o || !o.type) return;
+            const arrowArr = (o.arrow && o.arrow.hasArrow)
+                ? [Math.round(o.arrow.dx || 0), Math.round(o.arrow.dy || 0)]
+                : null;
+            const dimFlag = o.dimmed ? 1 : 0;
+
+            if (o.type === 'champion') {
+                const cid = o.champId || 'Poro';
+                const tCode = o.team === 'blue' ? 'b' : (o.team === 'red' ? 'r' : (o.team === 'none' ? 'n' : ''));
+                const uCode = o.uid === `champ_${cid}` ? '$' : getShortUid(o.uid);
+                const tuple = ['c', uCode, cid, Math.round(o.x || 0), Math.round(o.y || 0), tCode, dimFlag, arrowArr];
+                packed.push(trimTrailingDefaults(tuple, 5));
+            } else if (o.type === 'minion') {
+                const mCode = o.minionType === 'minion-red' ? 'r' : 'b';
+                const tuple = ['m', getShortUid(o.uid), encodeAssetSrc(o.src, dict), Math.round(o.x || 0), Math.round(o.y || 0), mCode, dimFlag, arrowArr];
+                packed.push(trimTrailingDefaults(tuple, 6));
+            } else if (o.type === 'object' || o.type === 'ward' || o.type === 'ping') {
+                const tag = o.type === 'ward' ? 'w' : (o.type === 'ping' ? 'p' : 'o');
+                const tuple = [tag, getShortUid(o.uid), encodeAssetSrc(o.src, dict), Math.round(o.x || 0), Math.round(o.y || 0), dimFlag, arrowArr];
+                packed.push(trimTrailingDefaults(tuple, 5));
+            } else if (o.type === 'pen_stroke') {
+                const colorIdx = PEN_COLOR_DICT.indexOf(o.color);
+                const cCode = colorIdx >= 0 ? colorIdx : (o.color || '#ff5252');
+                packed.push(['s', getShortUid(o.uid), cCode, o.width || 4, encodeStrokePoints(o.points)]);
+            } else if (o.type === 'free_arrow') {
+                const dx = o.arrow ? Math.round(o.arrow.dx || 0) : 0;
+                const dy = o.arrow ? Math.round(o.arrow.dy || 0) : 0;
+                packed.push(['a', getShortUid(o.uid), Math.round(o.x || 0), Math.round(o.y || 0), dx, dy]);
+            } else if (o.type === 'structure_destroyed') {
+                packed.push(['d', o.uid]);
+            }
+        });
+        return packed;
+    });
+}
+
+function unpackTimelineData(packedSteps, dict) {
+    if (!Array.isArray(packedSteps) || packedSteps.length === 0) return [[]];
+    const uidPrefix = 'imp_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 4);
+    const resolvedUids = new Map();
+    const resolveUid = (uCode, typePrefix) => {
+        const key = String(uCode);
+        if (resolvedUids.has(key)) return resolvedUids.get(key);
+        const uid = `${typePrefix}_${uidPrefix}_${key}`;
+        resolvedUids.set(key, uid);
+        return uid;
+    };
+
+    return packedSteps.map(stepArr => {
+        if (!Array.isArray(stepArr)) return [];
+        const objs = [];
+        stepArr.forEach(item => {
+            if (!Array.isArray(item) || item.length === 0) return;
+            const tag = item[0];
+
+            if (tag === 'c') {
+                const tCode = item[5];
+                const team = tCode === 'b' ? 'blue' : (tCode === 'r' ? 'red' : (tCode === 'n' ? 'none' : undefined));
+                const champId = item[2] || 'Poro';
+                const uid = item[1] === '$' ? `champ_${champId}` : resolveUid(item[1], 'champ');
+                const obj = {
+                    type: 'champion',
+                    uid: uid,
+                    champId: champId,
+                    x: Number(item[3]) || 0,
+                    y: Number(item[4]) || 0,
+                    arrow: Array.isArray(item[7]) ? { hasArrow: true, dx: Number(item[7][0]) || 0, dy: Number(item[7][1]) || 0 } : { hasArrow: false, dx: 0, dy: 0 }
+                };
+                if (team !== undefined) obj.team = team;
+                if (item[6]) obj.dimmed = true;
+                objs.push(obj);
+            } else if (tag === 'm') {
+                const obj = {
+                    type: 'minion',
+                    uid: resolveUid(item[1], 'minion'),
+                    src: decodeAssetSrc(item[2], dict),
+                    x: Number(item[3]) || 0,
+                    y: Number(item[4]) || 0,
+                    minionType: item[5] === 'r' ? 'minion-red' : 'minion-blue',
+                    arrow: Array.isArray(item[7]) ? { hasArrow: true, dx: Number(item[7][0]) || 0, dy: Number(item[7][1]) || 0 } : { hasArrow: false, dx: 0, dy: 0 }
+                };
+                if (item[6]) obj.dimmed = true;
+                objs.push(obj);
+            } else if (tag === 'o' || tag === 'w' || tag === 'p') {
+                const typeName = tag === 'w' ? 'ward' : (tag === 'p' ? 'ping' : 'object');
+                const obj = {
+                    type: typeName,
+                    uid: resolveUid(item[1], typeName),
+                    src: decodeAssetSrc(item[2], dict),
+                    x: Number(item[3]) || 0,
+                    y: Number(item[4]) || 0,
+                    arrow: Array.isArray(item[6]) ? { hasArrow: true, dx: Number(item[6][0]) || 0, dy: Number(item[6][1]) || 0 } : { hasArrow: false, dx: 0, dy: 0 }
+                };
+                if (item[5]) obj.dimmed = true;
+                objs.push(obj);
+            } else if (tag === 's') {
+                const cCode = item[2];
+                const color = typeof cCode === 'number' ? (PEN_COLOR_DICT[cCode] || '#ff5252') : (cCode || '#ff5252');
+                objs.push({
+                    type: 'pen_stroke',
+                    uid: resolveUid(item[1], 'stroke'),
+                    color: color,
+                    width: Number(item[3]) || 4,
+                    points: decodeStrokePoints(item[4])
+                });
+            } else if (tag === 'a') {
+                objs.push({
+                    type: 'free_arrow',
+                    uid: resolveUid(item[1], 'arrow'),
+                    x: Number(item[2]) || 0,
+                    y: Number(item[3]) || 0,
+                    arrow: { hasArrow: true, dx: Number(item[4]) || 0, dy: Number(item[5]) || 0 }
+                });
+            } else if (tag === 'd') {
+                objs.push({
+                    type: 'structure_destroyed',
+                    uid: item[1]
+                });
+            }
+        });
+        return objs;
+    });
+}
+
+function packBoardSnapshot(snap, dict) {
+    return [
+        snap.currentStepIndex || 0,
+        snap.myTeamSide === 'red' ? 'r' : 'b',
+        snap.bluePreset || [],
+        snap.redPreset || [],
+        snap.currentMode === 'screenshot' ? 's' : 'm',
+        snap.showGhostChampions === false ? 0 : 1,
+        packTimelineData(snap.timelineData || [[]], dict)
+    ];
+}
+
+function unpackBoardSnapshot(packedSnap, dict, preservedScreenshotId = null) {
+    if (!Array.isArray(packedSnap)) return null;
+    const rawMode = packedSnap[4] === 's' ? 'screenshot' : 'map';
+    const hasLocalScreenshot = rawMode === 'screenshot' && preservedScreenshotId &&
+        typeof getScreenshotsFromStorage === 'function' &&
+        getScreenshotsFromStorage().some(s => s.id === preservedScreenshotId);
+    return {
+        currentStepIndex: Number(packedSnap[0]) || 0,
+        myTeamSide: packedSnap[1] === 'r' ? 'red' : 'blue',
+        bluePreset: Array.isArray(packedSnap[2]) ? packedSnap[2].slice(0, 5) : [],
+        redPreset: Array.isArray(packedSnap[3]) ? packedSnap[3].slice(0, 5) : [],
+        currentMode: hasLocalScreenshot ? 'screenshot' : 'map',
+        selectedScreenshotId: hasLocalScreenshot ? preservedScreenshotId : null,
+        showGhostChampions: packedSnap[5] !== 0,
+        timelineData: unpackTimelineData(packedSnap[6], dict)
+    };
+}
+
+function sanitizeSnapshotScreenshotMode(snap) {
+    if (!snap || typeof snap !== 'object') return snap;
+    const copy = JSON.parse(JSON.stringify(snap));
+    if (copy.currentMode === 'screenshot') {
+        const scrId = copy.selectedScreenshotId;
+        const hasLocal = Boolean(
+            scrId &&
+            typeof getScreenshotsFromStorage === 'function' &&
+            getScreenshotsFromStorage().some(s => s.id === scrId)
+        );
+        if (!hasLocal) {
+            copy.currentMode = 'map';
+            copy.selectedScreenshotId = null;
+        }
+    }
+    return copy;
+}
+
+function getBoardLayoutSignature(snap, dict) {
+    if (!snap) return '';
+    return JSON.stringify([
+        snap.myTeamSide === 'red' ? 'r' : 'b',
+        Array.isArray(snap.bluePreset) ? snap.bluePreset : [],
+        Array.isArray(snap.redPreset) ? snap.redPreset : [],
+        packTimelineData(snap.timelineData || [[]], dict)
+    ]);
+}
+
+function getTacticContentSignature(tactic, dict) {
+    if (!tactic) return '';
+    return JSON.stringify([
+        tactic.name || '',
+        getBoardLayoutSignature(tactic, dict)
+    ]);
+}
+
+function uint8ToBase64Url(bytes) {
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+    }
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function base64UrlToUint8(str) {
+    let b64 = str.replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+}
+
+async function compressToGudoString(payloadObj) {
+    const rawJson = JSON.stringify(payloadObj);
+    const rawBytes = new TextEncoder().encode(rawJson);
+
+    if (typeof CompressionStream === 'function') {
+        try {
+            const cs = new CompressionStream('deflate-raw');
+            const outPromise = new Response(cs.readable).arrayBuffer();
+            const writer = cs.writable.getWriter();
+            writer.write(rawBytes).catch(() => {});
+            writer.close().catch(() => {});
+            const compressedBuf = await outPromise;
+            const compressedBytes = new Uint8Array(compressedBuf);
+            return {
+                code: 'GUDO1:' + uint8ToBase64Url(compressedBytes),
+                packedBytes: rawBytes.length,
+                compressedBytes: compressedBytes.length,
+                method: 'GUDO1 Deflate'
+            };
+        } catch (e) {
+            console.warn('deflate-raw 압축 실패, 무압축 폴백 사용:', e);
+        }
+    }
+
+    return {
+        code: 'GUDO0:' + uint8ToBase64Url(rawBytes),
+        packedBytes: rawBytes.length,
+        compressedBytes: rawBytes.length,
+        method: 'GUDO0 Base64URL'
+    };
+}
+
+async function decompressFromGudoString(inputStr) {
+    const trimmed = String(inputStr || '').trim();
+    if (!trimmed) throw new Error('입력된 데이터가 비어 있습니다.');
+
+    if (trimmed.startsWith('GUDO1:')) {
+        if (typeof DecompressionStream !== 'function') {
+            throw new Error('현재 브라우저가 GUDO1(Deflate) 해제를 지원하지 않습니다.');
+        }
+        const bytes = base64UrlToUint8(trimmed.slice(6));
+        const ds = new DecompressionStream('deflate-raw');
+        const outPromise = new Response(ds.readable).arrayBuffer();
+        const writer = ds.writable.getWriter();
+        writer.write(bytes).catch(() => {});
+        writer.close().catch(() => {});
+        const outBuf = await outPromise;
+        const jsonText = new TextDecoder().decode(outBuf);
+        return JSON.parse(jsonText);
+    }
+
+    if (trimmed.startsWith('GUDO0:')) {
+        const bytes = base64UrlToUint8(trimmed.slice(6));
+        const jsonText = new TextDecoder().decode(bytes);
+        return JSON.parse(jsonText);
+    }
+
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        return JSON.parse(trimmed);
+    }
+
+    throw new Error('올바른 GUDO 압축 코드(GUDO1:...) 또는 JSON 형식이 아닙니다.');
+}
+
+async function buildCompressedExport(scope) {
+    const dict = getAssetDict();
+    const savedTactics = getSavedTacticsFromStorage();
+    const currentSnap = createCurrentBoardSnapshot();
+
+    const packedTactics = savedTactics.map(t => [
+        t.name || '전술',
+        packBoardSnapshot(t, dict)
+    ]);
+    const packedCurrentBoard = packBoardSnapshot(currentSnap, dict);
+
+    const payload = {
+        v: 1,
+        s: scope === 'all' ? 'a' : 't',
+        t: packedTactics,
+        c: packedCurrentBoard
+    };
+
+    const baselineObj = {
+        tactics: savedTactics,
+        currentBoard: currentSnap
+    };
+
+    let savedPresets = [];
+    let customCamps = null;
+    if (scope === 'all') {
+        savedPresets = getSavedPresetsFromStorage();
+        payload.p = savedPresets.map(p => [
+            p.name || '프리셋',
+            Array.isArray(p.blue) ? p.blue : [],
+            Array.isArray(p.red) ? p.red : []
+        ]);
+        payload.sz = [baseChampSize, baseMinionSize, baseObjectSize, isAutoSizeEnabled ? 1 : 0];
+
+        const rawCamps = localStorage.getItem('lol_strategy_jungle_camps');
+        if (rawCamps) {
+            try {
+                const parsedCamps = JSON.parse(rawCamps);
+                if (Array.isArray(parsedCamps) && parsedCamps.length > 0) {
+                    customCamps = parsedCamps;
+                    payload.cp = parsedCamps.map(camp => {
+                        const tup = [encodeAssetSrc(camp.src, dict), Math.round(camp.x || 0), Math.round(camp.y || 0), camp.dimmed ? 1 : 0];
+                        return trimTrailingDefaults(tup, 3);
+                    });
+                }
+            } catch (e) {}
+        }
+
+        baselineObj.presets = savedPresets;
+        baselineObj.iconSizes = { champ: baseChampSize, minion: baseMinionSize, object: baseObjectSize, auto: isAutoSizeEnabled };
+        if (customCamps) baselineObj.customCamps = customCamps;
+    }
+
+    const plainBytes = new TextEncoder().encode(JSON.stringify(baselineObj)).length;
+    const compressed = await compressToGudoString(payload);
+    const codeBytes = compressed.code.length;
+    const savedPct = plainBytes > 0 ? Math.max(0, Math.round((1 - codeBytes / plainBytes) * 100)) : 0;
+
+    return {
+        code: compressed.code,
+        method: compressed.method,
+        plainBytes: plainBytes,
+        codeBytes: codeBytes,
+        savedPct: savedPct,
+        counts: {
+            tactics: savedTactics.length,
+            presets: savedPresets.length,
+            currentObjs: (currentSnap.timelineData[currentSnap.currentStepIndex] || []).length,
+            currentSteps: currentSnap.timelineData.length,
+            hasCustomCamps: Boolean(customCamps)
+        }
+    };
+}
+
+function decodeImportedPayload(raw) {
+    const dict = getAssetDict();
+
+    // v:1 고압축 포맷
+    if (raw && raw.v === 1 && (raw.s === 't' || raw.s === 'a')) {
+        const now = Date.now();
+        const tactics = Array.isArray(raw.t)
+            ? raw.t.map((entry, idx) => {
+                if (!Array.isArray(entry) || !Array.isArray(entry[1])) return null;
+                const snap = unpackBoardSnapshot(entry[1], dict);
+                if (!snap) return null;
+                return Object.assign({
+                    id: `tactic_${now}_${idx}_${Math.random().toString(36).substr(2, 4)}`,
+                    name: entry[0] || `불러온 전술 ${idx + 1}`,
+                    updatedAt: now
+                }, snap);
+            }).filter(Boolean)
+            : [];
+
+        const presets = Array.isArray(raw.p)
+            ? raw.p.map((entry, idx) => {
+                if (!Array.isArray(entry)) return null;
+                return {
+                    id: `user_preset_${now}_${idx}_${Math.random().toString(36).substr(2, 4)}`,
+                    name: entry[0] || `불러온 프리셋 ${idx + 1}`,
+                    blue: Array.isArray(entry[1]) ? entry[1].slice(0, 5) : [],
+                    red: Array.isArray(entry[2]) ? entry[2].slice(0, 5) : []
+                };
+            }).filter(Boolean)
+            : null;
+
+        const currentBoard = raw.c ? unpackBoardSnapshot(raw.c, dict) : null;
+
+        let iconSizes = null;
+        if (Array.isArray(raw.sz) && raw.sz.length >= 3) {
+            iconSizes = {
+                champ: Math.max(16, Math.min(72, Number(raw.sz[0]) || 40)),
+                minion: Math.max(20, Math.min(120, Number(raw.sz[1]) || 60)),
+                object: Math.max(16, Math.min(80, Number(raw.sz[2]) || 32)),
+                auto: raw.sz[3] !== 0
+            };
+        }
+
+        let customCamps = null;
+        if (Array.isArray(raw.cp)) {
+            customCamps = raw.cp.map(tup => ({
+                type: 'object',
+                src: decodeAssetSrc(tup[0], dict),
+                dimmed: Boolean(tup[3]),
+                x: Number(tup[1]) || 0,
+                y: Number(tup[2]) || 0
+            }));
+        }
+
+        return {
+            scope: raw.s === 'a' ? 'all' : 'tactics',
+            tactics: tactics,
+            presets: presets,
+            currentBoard: currentBoard,
+            iconSizes: iconSizes,
+            customCamps: customCamps
+        };
+    }
+
+    // 일반 JSON 호환 포맷 지원
+    if (raw && Array.isArray(raw.timelineData)) {
+        return {
+            scope: 'tactics',
+            tactics: [],
+            presets: null,
+            currentBoard: sanitizeSnapshotScreenshotMode(raw),
+            iconSizes: null,
+            customCamps: null
+        };
+    }
+
+    if (raw && (Array.isArray(raw.tactics) || Array.isArray(raw.presets))) {
+        const now = Date.now();
+        const rawBoard = raw.currentBoard || raw.board || null;
+        return {
+            scope: Array.isArray(raw.presets) ? 'all' : 'tactics',
+            tactics: Array.isArray(raw.tactics)
+                ? raw.tactics.filter(t => t && typeof t === 'object').map(sanitizeSnapshotScreenshotMode)
+                : [],
+            presets: Array.isArray(raw.presets)
+                ? raw.presets.filter(p => p && typeof p === 'object').map((p, idx) => ({
+                    id: p.id || `user_preset_json_${now}_${idx}`,
+                    name: p.name || `불러온 프리셋 ${idx + 1}`,
+                    blue: Array.isArray(p.blue) ? p.blue.slice(0, 5) : [],
+                    red: Array.isArray(p.red) ? p.red.slice(0, 5) : []
+                }))
+                : null,
+            currentBoard: (rawBoard && typeof rawBoard === 'object') ? sanitizeSnapshotScreenshotMode(rawBoard) : null,
+            iconSizes: (raw.iconSizes && typeof raw.iconSizes === 'object') ? raw.iconSizes : null,
+            customCamps: Array.isArray(raw.customCamps) ? raw.customCamps : null
+        };
+    }
+
+    throw new Error('지원하지 않는 데이터 구조입니다.');
+}
+
+// --- 2슬롯 롤링 백업 시스템 (최대 2개 저장) ---
+function getBackupSlotsFromStorage() {
+    const raw = localStorage.getItem(BACKUP_SLOTS_STORAGE_KEY);
+    if (!raw) return [];
+    try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed.slice(0, MAX_BACKUP_SLOTS) : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function saveBackupSlotsToStorage(slots) {
+    const trimmed = (Array.isArray(slots) ? slots : []).slice(0, MAX_BACKUP_SLOTS);
+    try {
+        localStorage.setItem(BACKUP_SLOTS_STORAGE_KEY, JSON.stringify(trimmed));
+        return true;
+    } catch (e) {
+        if (trimmed.length > 1) {
+            try {
+                localStorage.setItem(BACKUP_SLOTS_STORAGE_KEY, JSON.stringify(trimmed.slice(0, 1)));
+                return true;
+            } catch (e2) {}
+        }
+        return false;
+    }
+}
+
+function buildBackupSummaryLabel(prefix = '백업') {
+    const presetsCount = getSavedPresetsFromStorage().length;
+    const tacticsCount = getSavedTacticsFromStorage().length;
+    const d = new Date();
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    const ss = String(d.getSeconds()).padStart(2, '0');
+    return `${prefix} (${hh}:${mm}:${ss}) - 프리셋 ${presetsCount} · 전술 ${tacticsCount}`;
+}
+
+function getBackupEntrySignature(entry) {
+    if (!entry) return '';
+    return JSON.stringify([
+        entry.v || 0,
+        entry.board || null,
+        entry.boardScrId || null,
+        entry.tactics || [],
+        entry.presets || [],
+        entry.iconSizes || null,
+        entry.cp !== undefined ? entry.cp : (entry.customCampsRaw || null)
+    ]);
+}
+
+function findMatchingSavedTacticId(boardSnap, tacticsList = null, dict = null) {
+    if (!boardSnap) return null;
+    const d = dict || getAssetDict();
+    const list = Array.isArray(tacticsList) ? tacticsList : getSavedTacticsFromStorage();
+    if (!list.length) return null;
+    const sig = getBoardLayoutSignature(boardSnap, d);
+    const match = list.find(t => getBoardLayoutSignature(t, d) === sig);
+    return match ? match.id : null;
+}
+
+function createEmptyBoardSnapshot() {
+    return {
+        timelineData: [[]],
+        currentStepIndex: 0,
+        myTeamSide: 'blue',
+        bluePreset: [],
+        redPreset: [],
+        currentMode: 'map',
+        selectedScreenshotId: null,
+        showGhostChampions: true
+    };
+}
+
+function buildBackupEntry(customPrefix = '수동 백업', dict = null) {
+    const d = dict || getAssetDict();
+    const savedTactics = getSavedTacticsFromStorage();
+    const savedPresets = getSavedPresetsFromStorage();
+
+    let packedCamps = null;
+    const rawCamps = localStorage.getItem('lol_strategy_jungle_camps');
+    if (rawCamps) {
+        try {
+            const parsedCamps = JSON.parse(rawCamps);
+            if (Array.isArray(parsedCamps) && parsedCamps.length > 0) {
+                packedCamps = parsedCamps.map(camp => {
+                    const tup = [encodeAssetSrc(camp.src, d), Math.round(camp.x || 0), Math.round(camp.y || 0), camp.dimmed ? 1 : 0];
+                    return trimTrailingDefaults(tup, 3);
+                });
+            }
+        } catch (e) {}
+    }
+
+    return {
+        id: 'bk_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+        v: 1,
+        savedAt: Date.now(),
+        label: buildBackupSummaryLabel(customPrefix),
+        board: packBoardSnapshot(createCurrentBoardSnapshot(), d),
+        boardScrId: selectedScreenshotId || null,
+        tactics: savedTactics.map(t => [
+            t.name || '전술',
+            packBoardSnapshot(t, d),
+            t.id || null,
+            t.selectedScreenshotId || null
+        ]),
+        presets: savedPresets.map(p => [
+            p.name || '프리셋',
+            Array.isArray(p.blue) ? p.blue : [],
+            Array.isArray(p.red) ? p.red : [],
+            p.id || null
+        ]),
+        iconSizes: [baseChampSize, baseMinionSize, baseObjectSize, isAutoSizeEnabled ? 1 : 0],
+        cp: packedCamps
+    };
+}
+
+function saveCurrentToBackupSlot(showFeedback = false, customPrefix = '수동 백업', prebuiltEntry = null) {
+    if (isTutorialActive) return false;
+    const slots = getBackupSlotsFromStorage();
+    const entry = prebuiltEntry || buildBackupEntry(customPrefix);
+
+    const entrySig = getBackupEntrySignature(entry);
+    const existingIdx = slots.findIndex(s => getBackupEntrySignature(s) === entrySig);
+    if (existingIdx >= 0) {
+        slots[existingIdx].savedAt = entry.savedAt;
+        slots[existingIdx].label = entry.label;
+    } else {
+        slots.unshift(entry);
+    }
+
+    const saved = saveBackupSlotsToStorage(slots.slice(0, MAX_BACKUP_SLOTS));
+    renderBackupSlotsUI();
+
+    if (showFeedback) {
+        if (!saved) {
+            showToast('⚠️ 브라우저 저장 용량 부족으로 백업을 저장하지 못했습니다.');
+        } else if (existingIdx >= 0) {
+            showToast(`🛡️ 동일한 상태가 이미 백업 슬롯(${existingIdx + 1}번)에 보관되어 있어 시간만 갱신했습니다.`);
+        } else {
+            showToast('🛡️ 현재 프리셋·전술 상태를 백업 슬롯(최대 2개)에 저장했습니다.');
+        }
+    }
+    return saved;
+}
+
+function renderBackupSlotsUI() {
+    const sel = document.getElementById('io-backup-slot-select');
+    const restoreBtn = document.getElementById('io-restore-backup-btn');
+    if (!sel) return;
+
+    const slots = getBackupSlotsFromStorage();
+    sel.innerHTML = '';
+
+    if (slots.length === 0) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.innerText = '보관된 이전 프리셋/전술 백업 없음 (최대 2개)';
+        sel.appendChild(opt);
+        if (restoreBtn) restoreBtn.disabled = true;
+        return;
+    }
+
+    slots.forEach((slot, idx) => {
+        const opt = document.createElement('option');
+        opt.value = slot.id;
+        opt.innerText = `[슬롯 ${idx + 1}] ${slot.label || '이전 상태'}`;
+        sel.appendChild(opt);
+    });
+    if (restoreBtn) restoreBtn.disabled = false;
+}
+
+function applyIconSizeConfig(iconSizes) {
+    if (!iconSizes) return;
+    if (typeof iconSizes.champ === 'number') baseChampSize = Math.max(16, Math.min(72, iconSizes.champ));
+    if (typeof iconSizes.minion === 'number') baseMinionSize = Math.max(20, Math.min(120, iconSizes.minion));
+    if (typeof iconSizes.object === 'number') baseObjectSize = Math.max(16, Math.min(80, iconSizes.object));
+    if (typeof iconSizes.auto === 'boolean') isAutoSizeEnabled = iconSizes.auto;
+
+    const sizeSlider = document.getElementById('size-slider');
+    if (sizeSlider) sizeSlider.value = baseChampSize;
+    const minionSizeSlider = document.getElementById('minion-size-slider');
+    if (minionSizeSlider) minionSizeSlider.value = baseMinionSize;
+    const objectSizeSlider = document.getElementById('object-size-slider');
+    if (objectSizeSlider) objectSizeSlider.value = baseObjectSize;
+    const autoCb = document.getElementById('auto-size-checkbox');
+    if (autoCb) autoCb.checked = isAutoSizeEnabled;
+
+    saveIconSizeSettings();
+    applyAutoSize();
+}
+
+function restoreSelectedBackupSlot() {
+    const sel = document.getElementById('io-backup-slot-select');
+    if (!sel || !sel.value) return;
+
+    const slots = getBackupSlotsFromStorage();
+    const target = slots.find(s => s.id === sel.value);
+    if (!target) {
+        showToast('⚠️ 선택한 백업 슬롯을 찾을 수 없습니다.');
+        return;
+    }
+
+    const dict = getAssetDict();
+    // 복원 직전 현재 작업 상태가 선택한 슬롯과 다르면 2슬롯 백업에 자동 보관
+    const currentEntry = buildBackupEntry('슬롯 복원 전 백업', dict);
+    if (getBackupEntrySignature(currentEntry) !== getBackupEntrySignature(target)) {
+        saveCurrentToBackupSlot(false, '슬롯 복원 전 백업', currentEntry);
+    }
+
+    let restoredTactics = target.tactics;
+    let restoredPresets = target.presets;
+    let restoredBoard = target.board;
+    let restoredIconSizes = target.iconSizes;
+    let restoredCustomCampsRaw = target.customCampsRaw;
+
+    if (target.v === 1) {
+        restoredTactics = Array.isArray(target.tactics)
+            ? target.tactics.map((entry, idx) => {
+                if (!Array.isArray(entry) || !Array.isArray(entry[1])) return null;
+                const snap = unpackBoardSnapshot(entry[1], dict, entry[3] || null);
+                if (!snap) return null;
+                return Object.assign({
+                    id: entry[2] || `tactic_bk_${Date.now()}_${idx}`,
+                    name: entry[0] || `백업 전술 ${idx + 1}`,
+                    updatedAt: target.savedAt || Date.now()
+                }, snap);
+            }).filter(Boolean)
+            : [];
+
+        restoredPresets = Array.isArray(target.presets)
+            ? target.presets.map((entry, idx) => {
+                if (!Array.isArray(entry)) return null;
+                return {
+                    id: entry[3] || `user_preset_bk_${Date.now()}_${idx}`,
+                    name: entry[0] || `백업 프리셋 ${idx + 1}`,
+                    blue: Array.isArray(entry[1]) ? entry[1].slice(0, 5) : [],
+                    red: Array.isArray(entry[2]) ? entry[2].slice(0, 5) : []
+                };
+            }).filter(Boolean)
+            : [];
+
+        restoredBoard = Array.isArray(target.board)
+            ? unpackBoardSnapshot(target.board, dict, target.boardScrId || null)
+            : null;
+
+        if (Array.isArray(target.iconSizes) && target.iconSizes.length >= 3) {
+            restoredIconSizes = {
+                champ: Number(target.iconSizes[0]) || 40,
+                minion: Number(target.iconSizes[1]) || 60,
+                object: Number(target.iconSizes[2]) || 32,
+                auto: target.iconSizes[3] !== 0
+            };
+        }
+
+        if (Array.isArray(target.cp)) {
+            restoredCustomCampsRaw = JSON.stringify(target.cp.map(tup => ({
+                type: 'object',
+                src: decodeAssetSrc(tup[0], dict),
+                dimmed: Boolean(tup[3]),
+                x: Number(tup[1]) || 0,
+                y: Number(tup[2]) || 0
+            })));
+        } else {
+            restoredCustomCampsRaw = null;
+        }
+    }
+
+    if (Array.isArray(restoredTactics)) {
+        saveTacticsToStorage(restoredTactics);
+    }
+    if (Array.isArray(restoredPresets)) {
+        savePresetsToStorage(restoredPresets);
+    }
+    if (restoredCustomCampsRaw) {
+        localStorage.setItem('lol_strategy_jungle_camps', restoredCustomCampsRaw);
+    } else {
+        localStorage.removeItem('lol_strategy_jungle_camps');
+    }
+
+    applyIconSizeConfig(restoredIconSizes);
+    if (restoredBoard) {
+        applyBoardSnapshot(restoredBoard, true);
+        currentTacticId = findMatchingSavedTacticId(restoredBoard, restoredTactics, dict);
+    } else {
+        applyBoardSnapshot(createEmptyBoardSnapshot(), true);
+        currentTacticId = null;
+    }
+    renderTacticsUI();
+    renderSavedPresets();
+    renderBackupSlotsUI();
+
+    hideExportImportModal();
+    showToast(`⏪ '${target.label}' 상태로 복원했습니다.`);
+}
+
+function applyImportedPackage(pkg, mode = 'merge') {
+    // 불러오기 직전 현재 프리셋·전술 상태를 2슬롯 백업에 자동 보관
+    saveCurrentToBackupSlot(false, '불러오기 전 자동 백업');
+
+    const dict = getAssetDict();
+    let addedTactics = 0;
+    let addedPresets = 0;
+    let appliedBoard = false;
+    let filledLivePresets = false;
+    let appliedCustomCamps = false;
+
+    if (mode === 'overwrite') {
+        saveTacticsToStorage(pkg.tactics || []);
+        addedTactics = (pkg.tactics || []).length;
+
+        if (pkg.scope === 'all' || Array.isArray(pkg.presets)) {
+            savePresetsToStorage(pkg.presets || []);
+            addedPresets = (pkg.presets || []).length;
+        }
+        if (pkg.iconSizes) {
+            applyIconSizeConfig(pkg.iconSizes);
+        }
+        if (Array.isArray(pkg.customCamps)) {
+            localStorage.setItem('lol_strategy_jungle_camps', JSON.stringify(pkg.customCamps));
+            appliedCustomCamps = true;
+        } else if (pkg.scope === 'all') {
+            localStorage.removeItem('lol_strategy_jungle_camps');
+        }
+
+        currentTacticId = null;
+        if (pkg.currentBoard) {
+            applyBoardSnapshot(pkg.currentBoard, true);
+            currentTacticId = findMatchingSavedTacticId(pkg.currentBoard, pkg.tactics || [], dict);
+            appliedBoard = true;
+        } else if ((pkg.tactics || []).length > 0) {
+            currentTacticId = pkg.tactics[0].id;
+            applyBoardSnapshot(pkg.tactics[0], true);
+            appliedBoard = true;
+        } else {
+            applyBoardSnapshot(createEmptyBoardSnapshot(), true);
+        }
+    } else {
+        // 병합(merge) 모드: 난수 UID가 아닌 정규화 콘텐츠 시그니처 기준으로 중복 제거
+        const existingTactics = getSavedTacticsFromStorage();
+        const usedTacticIds = new Set(existingTactics.map(t => t.id));
+        const seenTacticSigs = new Set(existingTactics.map(t => getTacticContentSignature(t, dict)));
+        const incomingTactics = Array.isArray(pkg.tactics) ? pkg.tactics : [];
+
+        incomingTactics.forEach(t => {
+            const sig = getTacticContentSignature(t, dict);
+            if (seenTacticSigs.has(sig)) return;
+            seenTacticSigs.add(sig);
+
+            const copy = JSON.parse(JSON.stringify(t));
+            while (!copy.id || usedTacticIds.has(copy.id)) {
+                copy.id = 'tactic_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+            }
+            usedTacticIds.add(copy.id);
+            existingTactics.push(copy);
+            addedTactics++;
+        });
+        if (addedTactics > 0) {
+            saveTacticsToStorage(existingTactics);
+        }
+
+        if (Array.isArray(pkg.presets)) {
+            const existingPresets = getSavedPresetsFromStorage();
+            const usedPresetIds = new Set(existingPresets.map(p => p.id));
+            pkg.presets.forEach(p => {
+                const isDup = existingPresets.some(ex =>
+                    ex.name === p.name &&
+                    JSON.stringify(ex.blue) === JSON.stringify(p.blue) &&
+                    JSON.stringify(ex.red) === JSON.stringify(p.red)
+                );
+                if (isDup) return;
+                const copy = JSON.parse(JSON.stringify(p));
+                while (!copy.id || usedPresetIds.has(copy.id)) {
+                    copy.id = 'user_preset_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+                }
+                usedPresetIds.add(copy.id);
+                existingPresets.push(copy);
+                addedPresets++;
+            });
+            if (addedPresets > 0) {
+                savePresetsToStorage(existingPresets);
+            }
+        }
+
+        if (Array.isArray(pkg.customCamps) && pkg.customCamps.length > 0 && !localStorage.getItem('lol_strategy_jungle_camps')) {
+            localStorage.setItem('lol_strategy_jungle_camps', JSON.stringify(pkg.customCamps));
+            appliedCustomCamps = true;
+        }
+
+        const isCurrentBoardEmpty =
+            (!timelineData || (timelineData.length <= 1 && (!timelineData[0] || timelineData[0].length === 0))) &&
+            bluePreset.length === 0 &&
+            redPreset.length === 0;
+
+        if (pkg.currentBoard) {
+            const boardHasContent =
+                (Array.isArray(pkg.currentBoard.timelineData) && pkg.currentBoard.timelineData.some(s => s && s.length > 0)) ||
+                (pkg.currentBoard.bluePreset && pkg.currentBoard.bluePreset.length > 0) ||
+                (pkg.currentBoard.redPreset && pkg.currentBoard.redPreset.length > 0);
+
+            const boardSig = boardHasContent ? getBoardLayoutSignature(pkg.currentBoard, dict) : '';
+            const currentBoardSig = (!isCurrentBoardEmpty && boardHasContent) ? getBoardLayoutSignature(createCurrentBoardSnapshot(), dict) : '';
+            const matchesExistingTactic = boardHasContent && existingTactics.some(ex => getBoardLayoutSignature(ex, dict) === boardSig);
+            const matchesLiveBoard = !isCurrentBoardEmpty && boardHasContent && boardSig === currentBoardSig;
+
+            // 미저장 currentBoard는 빈 보드에서 전술 목록과 함께 들어온 경우에도 저장 목록에 보존해 전환 시 유실 방지
+            if (boardHasContent && !matchesExistingTactic && !matchesLiveBoard && (!isCurrentBoardEmpty || incomingTactics.length > 0)) {
+                const d = new Date();
+                const label = `가져온 전술 (${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')})`;
+                let newId = 'tactic_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+                while (usedTacticIds.has(newId)) {
+                    newId = 'tactic_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+                }
+                usedTacticIds.add(newId);
+                const extraTactic = Object.assign({}, pkg.currentBoard, {
+                    id: newId,
+                    name: label,
+                    updatedAt: Date.now()
+                });
+                existingTactics.push(extraTactic);
+                saveTacticsToStorage(existingTactics);
+                addedTactics++;
+            }
+
+            if (isCurrentBoardEmpty && boardHasContent) {
+                applyBoardSnapshot(pkg.currentBoard, true);
+                currentTacticId = findMatchingSavedTacticId(pkg.currentBoard, existingTactics, dict);
+                appliedBoard = true;
+            }
+
+            if (!appliedBoard && pkg.scope === 'all' && bluePreset.length === 0 && redPreset.length === 0 &&
+                ((pkg.currentBoard.bluePreset && pkg.currentBoard.bluePreset.length > 0) || (pkg.currentBoard.redPreset && pkg.currentBoard.redPreset.length > 0))) {
+                bluePreset = JSON.parse(JSON.stringify(pkg.currentBoard.bluePreset || []));
+                redPreset = JSON.parse(JSON.stringify(pkg.currentBoard.redPreset || []));
+                renderPresets();
+                filledLivePresets = true;
+            }
+        }
+
+        if (!appliedBoard && isCurrentBoardEmpty && existingTactics.length > 0) {
+            currentTacticId = existingTactics[0].id;
+            applyBoardSnapshot(existingTactics[0], true);
+            appliedBoard = true;
+        }
+    }
+
+    renderTacticsUI();
+    renderSavedPresets();
+    renderBackupSlotsUI();
+
+    const parts = [];
+    if (addedTactics > 0) parts.push(`전술 ${addedTactics}개`);
+    if (addedPresets > 0) parts.push(`프리셋 ${addedPresets}개`);
+    if (appliedBoard) parts.push('현재 보드');
+    if (!appliedBoard && filledLivePresets) parts.push('현재 슬롯');
+    if (appliedCustomCamps) parts.push('캠프 좌표');
+    const summaryText = parts.length > 0 ? parts.join(' · ') : '변경사항 없음(중복 항목 제외)';
+
+    hideExportImportModal();
+    showToast(`📥 ${mode === 'overwrite' ? '덮어쓰기' : '병합'} 완료: ${summaryText}`);
+}
+
+function getSelectedImportMode() {
+    const checked = document.querySelector('input[name="io-import-mode"]:checked');
+    return checked ? checked.value : 'merge';
+}
+
+async function processImportText(rawText) {
+    try {
+        const rawObj = await decompressFromGudoString(rawText);
+        const pkg = decodeImportedPayload(rawObj);
+        applyImportedPackage(pkg, getSelectedImportMode());
+        return true;
+    } catch (e) {
+        console.error('Import error:', e);
+        showToast(`⚠️ 불러오기 실패: ${e.message || '잘못된 데이터 형식입니다.'}`);
+        return false;
+    }
+}
+
+function handleImportFileSelect(event) {
+    const input = event.target;
+    const file = input && input.files ? input.files[0] : null;
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const content = e.target && e.target.result ? String(e.target.result) : '';
+        processImportText(content);
+        input.value = '';
+    };
+    reader.onerror = () => {
+        showToast('⚠️ 파일을 읽는 중 오류가 발생했습니다.');
+        input.value = '';
+    };
+    reader.readAsText(file, 'utf-8');
+}
+
+async function importFromCodeInput() {
+    const textarea = document.getElementById('io-import-code');
+    if (!textarea || !textarea.value.trim()) {
+        showToast('⚠️ 붙여넣은 압축 코드가 없습니다.');
+        return;
+    }
+    const ok = await processImportText(textarea.value);
+    if (ok) {
+        textarea.value = '';
+    }
+}
+
+function openExportImportModal(tab = 'tactics') {
+    const modal = document.getElementById('io-modal');
+    if (!modal) return;
+    if (typeof hideHelpModal === 'function') hideHelpModal();
+    if (typeof closeMobileSidebars === 'function') closeMobileSidebars();
+    if (typeof closeMobileDropdown === 'function') closeMobileDropdown();
+    const importTextarea = document.getElementById('io-import-code');
+    if (importTextarea) importTextarea.value = '';
+    modal.classList.add('active');
+    switchIoTab(tab);
+}
+
+function hideExportImportModal() {
+    const modal = document.getElementById('io-modal');
+    if (modal) modal.classList.remove('active');
+}
+
+async function switchIoTab(tab) {
+    activeIoTab = tab;
+    const token = ++ioRenderToken;
+
+    ['tactics', 'all', 'import'].forEach(t => {
+        const btn = document.getElementById(`io-tab-${t}`);
+        if (btn) btn.classList.toggle('active', t === tab);
+    });
+
+    const exportView = document.getElementById('io-view-export');
+    const importView = document.getElementById('io-view-import');
+
+    if (tab === 'import') {
+        if (exportView) exportView.style.display = 'none';
+        if (importView) importView.style.display = 'flex';
+        renderBackupSlotsUI();
+        return;
+    }
+
+    if (exportView) exportView.style.display = 'flex';
+    if (importView) importView.style.display = 'none';
+
+    const scope = tab === 'all' ? 'all' : 'tactics';
+    currentExportScope = scope;
+    currentExportCode = '';
+
+    const summaryEl = document.getElementById('io-export-summary');
+    const statsEl = document.getElementById('io-compression-stats');
+    const codeEl = document.getElementById('io-export-code');
+
+    if (statsEl) statsEl.innerText = '압축 코드 생성 중...';
+    if (codeEl) codeEl.value = '';
+
+    const result = await buildCompressedExport(scope);
+    if (token !== ioRenderToken) return;
+
+    currentExportCode = result.code;
+    if (codeEl) codeEl.value = result.code;
+
+    if (summaryEl) {
+        if (scope === 'all') {
+            summaryEl.innerHTML =
+                `<strong>📦 전부 내보내기</strong> — 저장된 프리셋 <strong>${result.counts.presets}개</strong>, 전술 페이지 <strong>${result.counts.tactics}개</strong>, 현재 보드/슬롯(${result.counts.currentSteps}스텝) 및 3종 아이콘 크기${result.counts.hasCustomCamps ? '·커스텀 캠프 좌표' : ''}가 포함됩니다.`;
+        } else {
+            summaryEl.innerHTML =
+                `<strong>📤 전술 내보내기</strong> — 저장된 전술 페이지 <strong>${result.counts.tactics}개</strong>와 현재 보드(${result.counts.currentSteps}스텝, 객체 ${result.counts.currentObjs}개)를 내보냅니다.`;
+        }
+    }
+
+    if (statsEl) {
+        const kbRaw = (result.plainBytes / 1024).toFixed(2);
+        const kbComp = (result.codeBytes / 1024).toFixed(2);
+        statsEl.innerText = `원본 JSON ${kbRaw} KB ➔ 압축 코드 ${kbComp} KB (${result.savedPct}% 절감 · ${result.method})`;
+    }
+}
+
+function copyExportCode() {
+    const codeEl = document.getElementById('io-export-code');
+    const text = currentExportCode || (codeEl ? codeEl.value : '');
+    if (!text) {
+        showToast('⚠️ 복사할 압축 코드가 없습니다.');
+        return;
+    }
+
+    const fallbackCopy = () => {
+        if (codeEl) {
+            codeEl.select();
+            codeEl.setSelectionRange(0, text.length);
+            try {
+                document.execCommand('copy');
+                showToast('📋 압축 코드가 클립보드에 복사되었습니다.');
+                return true;
+            } catch (e) {}
+        }
+        return false;
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+            showToast('📋 압축 코드가 클립보드에 복사되었습니다.');
+        }).catch(() => {
+            if (!fallbackCopy()) showToast('⚠️ 복사에 실패했습니다. 텍스트를 직접 복사해 주세요.');
+        });
+    } else if (!fallbackCopy()) {
+        showToast('⚠️ 복사에 실패했습니다. 텍스트를 직접 복사해 주세요.');
+    }
+}
+
+function downloadExportFile() {
+    const text = currentExportCode;
+    if (!text) {
+        showToast('⚠️ 저장할 내보내기 데이터가 없습니다.');
+        return;
+    }
+    const d = new Date();
+    const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`;
+    const filename = `lol-strategy-${currentExportScope}-${stamp}.gudo`;
+
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast(`💾 '${filename}' 파일로 저장되었습니다.`);
+}
+
+function copyPageLink() {
+    const url = window.location.href.split('#')[0];
+    const fallbackCopy = () => {
+        const ta = document.createElement('textarea');
+        ta.value = url;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        ta.setSelectionRange(0, url.length);
+        let ok = false;
+        try {
+            ok = document.execCommand('copy');
+        } catch (e) {
+            ok = false;
+        } finally {
+            ta.remove();
+        }
+        return ok;
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(() => {
+            showToast('🔗 전략 보드 페이지 링크가 클립보드에 복사되었습니다.');
+        }).catch(() => {
+            if (fallbackCopy()) {
+                showToast('🔗 전략 보드 페이지 링크가 클립보드에 복사되었습니다.');
+            } else {
+                showToast('⚠️ 링크 복사에 실패했습니다.');
+            }
+        });
+    } else if (fallbackCopy()) {
+        showToast('🔗 전략 보드 페이지 링크가 클립보드에 복사되었습니다.');
+    } else {
+        showToast('⚠️ 링크 복사에 실패했습니다.');
+    }
+}
 
 init();
 bindTouchEvents();

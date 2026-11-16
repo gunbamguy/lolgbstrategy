@@ -1,0 +1,52 @@
+MIT License
+
+Copyright (c) 2026 군밤가이 (gunbamguy)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+Riot Games Legal Jibber Jabber Notice (게임 데이터 및 이미지 저작권 고지)
+================================================================================
+
+This MIT License applies strictly to the original source code of GUDO.
+All League of Legends game assets, champion/item/rune icons, map imagery,
+and CDN data (Riot Data Dragon & CommunityDragon) remain the intellectual
+property of Riot Games, Inc. and are governed by Riot Games' Legal Jibber Jabber
+policy (https://www.riotgames.com/en/legal).
+
+GUDO isn't endorsed by Riot Games and doesn't reflect the views or opinions of
+Riot Games or anyone officially involved in producing or managing Riot Games
+properties. Riot Games, and all associated properties are trademarks or
+registered trademarks of Riot Games, Inc.
+
+구도(GUDO)는 Riot Games가 보증하지 않으며, Riot Games 또는 공식 관계자의
+견해를 반영하지 않습니다. 본 프로젝트에 포함된 리그 오브 레전드 관련 이미지,
+아이콘 및 게임 데이터(Data Dragon / CommunityDragon)의 저작권과 상표권은 모두
+Riot Games, Inc.에 귀속됩니다.
+
+================================================================================
+Third-Party Open Source & Font Notices (서드파티 라이선스 고지)
+================================================================================
+
+1. html2canvas v1.4.1 (loaded via CDN in rune/index.html)
+   - Copyright (c) 2012 Niklas von Hertzen
+   - License: MIT License (https://github.com/niklasvh/html2canvas/blob/master/LICENSE)
+
+2. Google Fonts - Gothic A1 & Outfit (loaded via Google Fonts CDN)
+   - License: SIL Open Font License 1.1 (OFL-1.1)

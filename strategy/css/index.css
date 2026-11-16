@@ -64,19 +64,19 @@ body {
 }
 
 #tab-content-team .section-title {
-    margin-top: 8px;
-    margin-bottom: 6px;
-    font-size: 0.98em;
-    padding-bottom: 4px;
+    margin-top: 5px;
+    margin-bottom: 4px;
+    font-size: 0.96em;
+    padding-bottom: 3px;
 }
 #tab-content-team .section-title:first-child {
     margin-top: 0;
 }
 #tab-content-team .preset-container {
-    min-height: 62px;
-    padding: 8px 10px;
-    margin-bottom: 10px;
-    gap: 8px;
+    min-height: 54px;
+    padding: 6px 8px;
+    margin-bottom: 6px;
+    gap: 6px;
 }
 #tacticsList {
     grid-template-columns: repeat(6, 1fr);
@@ -85,14 +85,14 @@ body {
 }
 
 .tactics-section-box {
-    margin-top: 12px;
-    padding: 10px;
+    margin-top: 8px;
+    padding: 8px;
     background: linear-gradient(180deg, rgba(208, 184, 108, 0.1) 0%, rgba(30, 30, 34, 0.95) 100%);
     border: 1.5px solid rgba(208, 184, 108, 0.45);
     border-radius: 8px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
 }
 .tactics-section-header {
@@ -103,7 +103,7 @@ body {
     font-weight: bold;
     font-size: 13px;
     border-bottom: 1px solid rgba(208, 184, 108, 0.25);
-    padding-bottom: 5px;
+    padding-bottom: 4px;
 }
 .tactics-count-badge {
     font-size: 11px;
@@ -112,6 +112,37 @@ body {
     padding: 1px 7px;
     border-radius: 10px;
     border: 1px solid rgba(208, 184, 108, 0.3);
+}
+.tactics-io-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    padding-bottom: 6px;
+    margin-bottom: 2px;
+    border-bottom: 1px dashed rgba(208, 184, 108, 0.25);
+}
+.tactics-io-row .io-btn {
+    padding: 5px 4px;
+    font-size: 11.5px;
+    background: rgba(18, 25, 38, 0.95);
+    color: #f0e6d2;
+    border: 1px solid rgba(200, 155, 60, 0.45);
+    transition: all 0.18s ease;
+}
+.tactics-io-row .io-btn:hover {
+    background: rgba(200, 155, 60, 0.22);
+    border-color: #c89b3c;
+    color: #fff;
+}
+.tactics-io-row .io-btn.import {
+    background: rgba(10, 200, 185, 0.14);
+    border-color: rgba(10, 200, 185, 0.55);
+    color: #aef7ef;
+}
+.tactics-io-row .io-btn.import:hover {
+    background: rgba(10, 200, 185, 0.28);
+    border-color: #0ac8b9;
+    color: #fff;
 }
 
 .section-title {
@@ -833,7 +864,7 @@ svg line.selected {
     display: flex;
     justify-content: center;
     align-items: center;
-    z-index: 1000;
+    z-index: 2000;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.3s ease;
@@ -964,6 +995,174 @@ svg line.selected {
 }
 
 /* ==========================================================================
+   📦 고압축 내보내기 / 불러오기 & 2슬롯 백업 모달 (Hextech Theme)
+   ========================================================================== */
+.io-modal-content {
+    width: 560px;
+    background: linear-gradient(165deg, #161d2c 0%, #0d121c 100%);
+    border: 1.5px solid rgba(200, 155, 60, 0.65);
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.85), 0 0 24px rgba(10, 200, 185, 0.16);
+}
+.io-modal-content .modal-header {
+    background: linear-gradient(180deg, #1b2335 0%, #121826 100%);
+    border-bottom-color: rgba(200, 155, 60, 0.32);
+}
+.io-modal-content .modal-footer {
+    background: #101622;
+    border-top-color: rgba(200, 155, 60, 0.28);
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+}
+.io-footer-note {
+    font-size: 11.5px;
+    color: #8fa0bc;
+}
+.io-modal-tabs {
+    display: flex;
+    background: #0c1018;
+    border-bottom: 1px solid rgba(200, 155, 60, 0.3);
+}
+.io-tab-btn {
+    flex: 1;
+    padding: 10px 8px;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: #8b99b3;
+    font-size: 12.5px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.18s ease;
+}
+.io-tab-btn:hover {
+    color: #f0e6d2;
+    background: rgba(255, 255, 255, 0.03);
+}
+.io-tab-btn.active {
+    color: #0ac8b9;
+    border-bottom-color: #0ac8b9;
+    background: rgba(10, 200, 185, 0.08);
+}
+.io-modal-body {
+    padding: 16px 18px;
+    gap: 12px;
+    max-height: 70vh;
+}
+.io-view {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.io-summary-box {
+    background: rgba(200, 155, 60, 0.09);
+    border: 1px solid rgba(200, 155, 60, 0.35);
+    border-radius: 6px;
+    padding: 9px 12px;
+    font-size: 12.5px;
+    color: #f0e6d2;
+    line-height: 1.5;
+}
+.io-stats-badge {
+    background: rgba(10, 200, 185, 0.1);
+    border: 1px solid rgba(10, 200, 185, 0.42);
+    color: #9df5ec;
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-size: 12px;
+    font-weight: bold;
+    text-align: center;
+}
+.io-code-textarea {
+    width: 100%;
+    height: 115px;
+    box-sizing: border-box;
+    resize: vertical;
+    background: #070a10;
+    color: #c7d4ea;
+    border: 1px solid rgba(200, 155, 60, 0.4);
+    border-radius: 6px;
+    padding: 9px 10px;
+    font-family: Consolas, monospace;
+    font-size: 11.5px;
+    line-height: 1.4;
+    outline: none;
+    word-break: break-all;
+}
+.io-code-textarea:focus {
+    border-color: #0ac8b9;
+    box-shadow: 0 0 8px rgba(10, 200, 185, 0.25);
+}
+.io-action-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+.io-mode-selector {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(200, 155, 60, 0.25);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 12px;
+}
+.io-mode-label {
+    color: var(--accent-color);
+    font-weight: bold;
+}
+.io-radio-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: #dbe3f2;
+    cursor: pointer;
+    user-select: none;
+}
+.io-radio-label input {
+    accent-color: #0ac8b9;
+    margin: 0;
+}
+.io-section-box {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: rgba(8, 12, 20, 0.72);
+    border: 1px solid rgba(200, 155, 60, 0.28);
+    border-radius: 8px;
+    padding: 10px 12px;
+}
+.io-section-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12.5px;
+    font-weight: bold;
+    color: #f0e6d2;
+}
+.io-mini-btn {
+    background: rgba(200, 155, 60, 0.18);
+    border: 1px solid rgba(200, 155, 60, 0.5);
+    color: #f0e6d2;
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: bold;
+    cursor: pointer;
+}
+.io-mini-btn:hover {
+    background: rgba(200, 155, 60, 0.35);
+    color: #fff;
+}
+.io-backup-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+/* ==========================================================================
    🎓 단계별 인터랙티브 스포트라이트 튜토리얼 (Hextech Dark & Gold & Teal)
    ========================================================================== */
 .tutorial-launch-btn {
@@ -986,6 +1185,27 @@ svg line.selected {
     border-color: #f0e6d2;
     color: #ffffff;
     box-shadow: 0 0 14px rgba(10, 200, 185, 0.45);
+}
+
+.link-copy-btn {
+    background: rgba(59, 130, 246, 0.18);
+    border: 1px solid #60a5fa;
+    color: #e0f2fe;
+    font-weight: bold;
+    padding: 4px 8px;
+    font-size: 12px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.link-copy-btn:hover {
+    background: rgba(59, 130, 246, 0.34);
+    border-color: #93c5fd;
+    color: #ffffff;
+    box-shadow: 0 0 12px rgba(96, 165, 250, 0.45);
 }
 
 .tutorial-overlay {
