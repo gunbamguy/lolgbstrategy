@@ -4576,9 +4576,15 @@ async function compressToGudoString(payloadObj) {
     };
 }
 
+const MAX_IMPORT_INPUT_CHARS = 3 * 1024 * 1024;
+const MAX_IMPORT_DECOMPRESSED_BYTES = 10 * 1024 * 1024;
+
 async function decompressFromGudoString(inputStr) {
     const trimmed = String(inputStr || '').trim();
     if (!trimmed) throw new Error('입력된 데이터가 비어 있습니다.');
+    if (trimmed.length > MAX_IMPORT_INPUT_CHARS) {
+        throw new Error('입력 데이터가 너무 큽니다. (최대 약 3MB)');
+    }
 
     if (trimmed.startsWith('GUDO1:')) {
         if (typeof DecompressionStream !== 'function') {
@@ -4586,12 +4592,26 @@ async function decompressFromGudoString(inputStr) {
         }
         const bytes = base64UrlToUint8(trimmed.slice(6));
         const ds = new DecompressionStream('deflate-raw');
-        const outPromise = new Response(ds.readable).arrayBuffer();
+        const reader = ds.readable.getReader();
         const writer = ds.writable.getWriter();
         writer.write(bytes).catch(() => {});
         writer.close().catch(() => {});
-        const outBuf = await outPromise;
-        const jsonText = new TextDecoder().decode(outBuf);
+
+        // 압축 폭탄(작은 코드가 거대한 데이터로 풀리는 공격) 방지: 해제 크기 상한 적용
+        const decoder = new TextDecoder();
+        let jsonText = '';
+        let total = 0;
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            total += value.length;
+            if (total > MAX_IMPORT_DECOMPRESSED_BYTES) {
+                try { await reader.cancel(); } catch (e) {}
+                throw new Error('압축 해제 데이터가 허용 크기(10MB)를 초과했습니다.');
+            }
+            jsonText += decoder.decode(value, { stream: true });
+        }
+        jsonText += decoder.decode();
         return JSON.parse(jsonText);
     }
 
@@ -4682,7 +4702,185 @@ async function buildCompressedExport(scope) {
     };
 }
 
+// 🛡️ 불러온 데이터 정화(Sanitize): 허용된 필드·형식만 재구성하여 선택자/CSS/URL/프로토타입 인젝션 차단
+const SAFE_IMPORT_IMG_HOSTS = ['ddragon.leagueoflegends.com', 'raw.communitydragon.org'];
+const SAFE_IMPORT_TYPES = ['champion', 'minion', 'ward', 'ping', 'object', 'pen_stroke', 'free_arrow', 'structure_destroyed'];
+const SAFE_UID_RE = /^[A-Za-z0-9_-]{1,80}$/;
+const SAFE_CHAMP_ID_RE = /^[A-Za-z0-9]{1,40}$/;
+const SAFE_COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
+const SAFE_LOCAL_IMG_RE = /^images\/[A-Za-z0-9_.' -]{1,80}\.(png|jpg|jpeg|webp|gif)$/;
+
+function sanitizeImportText(value, maxLen) {
+    return String(value == null ? '' : value).replace(/[\u0000-\u001f\u007f]/g, '').slice(0, maxLen || 60);
+}
+
+function sanitizeImportSrc(src) {
+    if (typeof src !== 'string') return '';
+    const s = src.trim();
+    if (SAFE_LOCAL_IMG_RE.test(s)) return s;
+    if (/^data:image\/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(s)) return s;
+    try {
+        const u = new URL(s);
+        if (u.protocol === 'https:' && SAFE_IMPORT_IMG_HOSTS.includes(u.hostname)) return u.href;
+    } catch (e) {}
+    return '';
+}
+
+function sanitizeImportNum(v, min, max, fallback) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(min, Math.min(max, n));
+}
+
+function sanitizeImportTimeline(timeline) {
+    const steps = Array.isArray(timeline) ? timeline.slice(0, 200) : [[]];
+    const uidMap = new Map();
+    const mapUid = (rawUid) => {
+        const key = String(rawUid);
+        if (uidMap.has(key)) return uidMap.get(key);
+        const safe = SAFE_UID_RE.test(key)
+            ? key
+            : 'imp_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 6) + '_' + uidMap.size;
+        uidMap.set(key, safe);
+        return safe;
+    };
+
+    const result = steps.map(step => {
+        if (!Array.isArray(step)) return [];
+        const out = [];
+        step.slice(0, 2000).forEach(o => {
+            if (!o || typeof o !== 'object' || !SAFE_IMPORT_TYPES.includes(o.type)) return;
+
+            if (o.type === 'structure_destroyed') {
+                if (typeof o.uid === 'string' && /^struct_\d{1,3}$/.test(o.uid)) {
+                    out.push({ type: 'structure_destroyed', uid: o.uid });
+                }
+                return;
+            }
+
+            const clean = { type: o.type, uid: mapUid(o.uid) };
+            clean.x = sanitizeImportNum(o.x, -5000, 5000, 0);
+            clean.y = sanitizeImportNum(o.y, -5000, 5000, 0);
+
+            if (o.arrow && typeof o.arrow === 'object') {
+                clean.arrow = {
+                    hasArrow: Boolean(o.arrow.hasArrow),
+                    dx: sanitizeImportNum(o.arrow.dx, -5000, 5000, 0),
+                    dy: sanitizeImportNum(o.arrow.dy, -5000, 5000, 0)
+                };
+            }
+            if (o.dimmed) clean.dimmed = true;
+
+            if (o.type === 'champion') {
+                clean.champId = (typeof o.champId === 'string' && SAFE_CHAMP_ID_RE.test(o.champId)) ? o.champId : 'Poro';
+                if (o.team === 'blue' || o.team === 'red' || o.team === 'none') clean.team = o.team;
+            } else if (o.type === 'pen_stroke') {
+                clean.color = (typeof o.color === 'string' && SAFE_COLOR_RE.test(o.color)) ? o.color : '#ff5252';
+                clean.width = sanitizeImportNum(o.width, 1, 40, 4);
+                clean.points = (Array.isArray(o.points) ? o.points.slice(0, 5000) : [])
+                    .filter(p => p && typeof p === 'object')
+                    .map(p => ({ x: sanitizeImportNum(p.x, -5000, 5000, 0), y: sanitizeImportNum(p.y, -5000, 5000, 0) }));
+                delete clean.arrow;
+            } else if (o.type === 'free_arrow') {
+                // 자유 화살표는 arrow 정보가 필수
+                if (!clean.arrow) clean.arrow = { hasArrow: true, dx: 0, dy: 0 };
+            } else {
+                clean.src = sanitizeImportSrc(o.src);
+                if (o.type === 'minion') {
+                    clean.minionType = o.minionType === 'minion-red' ? 'minion-red' : 'minion-blue';
+                }
+            }
+            out.push(clean);
+        });
+        return out;
+    });
+    return result.length > 0 ? result : [[]];
+}
+
+function sanitizeImportPresetList(list) {
+    return (Array.isArray(list) ? list : []).slice(0, 200)
+        .filter(p => Array.isArray(p) ? false : (p && typeof p === 'object'))
+        .map((p, idx) => ({
+            id: sanitizeImportText(p.id, 60) || `user_preset_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 4)}`,
+            name: sanitizeImportText(p.name, 60) || `불러온 프리셋 ${idx + 1}`,
+            blue: (Array.isArray(p.blue) ? p.blue : []).filter(k => typeof k === 'string' && SAFE_CHAMP_ID_RE.test(k)).slice(0, 5),
+            red: (Array.isArray(p.red) ? p.red : []).filter(k => typeof k === 'string' && SAFE_CHAMP_ID_RE.test(k)).slice(0, 5)
+        }));
+}
+
+function sanitizeImportBoard(snap) {
+    if (!snap || typeof snap !== 'object') return null;
+    const timeline = sanitizeImportTimeline(snap.timelineData);
+    const champList = (arr) => (Array.isArray(arr) ? arr : [])
+        .filter(k => typeof k === 'string' && SAFE_CHAMP_ID_RE.test(k)).slice(0, 5);
+    return {
+        timelineData: timeline,
+        currentStepIndex: Math.max(0, Math.min(Math.floor(sanitizeImportNum(snap.currentStepIndex, 0, 1000, 0)), timeline.length - 1)),
+        myTeamSide: snap.myTeamSide === 'red' ? 'red' : 'blue',
+        bluePreset: champList(snap.bluePreset),
+        redPreset: champList(snap.redPreset),
+        currentMode: snap.currentMode === 'screenshot' ? 'screenshot' : 'map',
+        selectedScreenshotId: (typeof snap.selectedScreenshotId === 'string' && SAFE_UID_RE.test(snap.selectedScreenshotId)) ? snap.selectedScreenshotId : null,
+        showGhostChampions: snap.showGhostChampions !== false
+    };
+}
+
+function sanitizeImportedPackage(pkg) {
+    if (!pkg || typeof pkg !== 'object') throw new Error('지원하지 않는 데이터 구조입니다.');
+    const tactics = (Array.isArray(pkg.tactics) ? pkg.tactics : []).slice(0, 500)
+        .filter(t => t && typeof t === 'object')
+        .map((t, idx) => {
+            const board = sanitizeImportBoard(t);
+            if (!board) return null;
+            const id = (typeof t.id === 'string' && SAFE_UID_RE.test(t.id))
+                ? t.id
+                : `tactic_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 4)}`;
+            return Object.assign({}, board, {
+                id: id,
+                name: sanitizeImportText(t.name, 60) || `불러온 전술 ${idx + 1}`,
+                updatedAt: Number.isFinite(Number(t.updatedAt)) ? Number(t.updatedAt) : Date.now()
+            });
+        }).filter(Boolean);
+
+    let iconSizes = null;
+    if (pkg.iconSizes && typeof pkg.iconSizes === 'object') {
+        iconSizes = {
+            champ: sanitizeImportNum(pkg.iconSizes.champ, 16, 72, 40),
+            minion: sanitizeImportNum(pkg.iconSizes.minion, 20, 120, 60),
+            object: sanitizeImportNum(pkg.iconSizes.object, 16, 80, 32),
+            auto: pkg.iconSizes.auto !== false
+        };
+    }
+
+    let customCamps = null;
+    if (Array.isArray(pkg.customCamps)) {
+        customCamps = pkg.customCamps.slice(0, 100)
+            .filter(c => c && typeof c === 'object')
+            .map(c => ({
+                type: 'object',
+                src: sanitizeImportSrc(c.src),
+                dimmed: Boolean(c.dimmed),
+                x: sanitizeImportNum(c.x, -5000, 5000, 0),
+                y: sanitizeImportNum(c.y, -5000, 5000, 0)
+            }))
+            .filter(c => c.src);
+    }
+
+    return {
+        scope: pkg.scope === 'all' ? 'all' : 'tactics',
+        tactics: tactics,
+        presets: Array.isArray(pkg.presets) ? sanitizeImportPresetList(pkg.presets) : null,
+        currentBoard: pkg.currentBoard ? sanitizeImportBoard(pkg.currentBoard) : null,
+        iconSizes: iconSizes,
+        customCamps: customCamps
+    };
+}
+
 function decodeImportedPayload(raw) {
+    return sanitizeImportedPackage(decodeImportedPayloadRaw(raw));
+}
+
+function decodeImportedPayloadRaw(raw) {
     const dict = getAssetDict();
 
     // v:1 고압축 포맷
@@ -5267,6 +5465,11 @@ function handleImportFileSelect(event) {
     const input = event.target;
     const file = input && input.files ? input.files[0] : null;
     if (!file) return;
+    if (file.size > MAX_IMPORT_INPUT_CHARS) {
+        showToast('⚠️ 파일이 너무 큽니다. (최대 약 3MB)');
+        input.value = '';
+        return;
+    }
 
     const reader = new FileReader();
     reader.onload = (e) => {

@@ -171,6 +171,7 @@
                     <button id="mobile-tactic-update-btn" class="mobile-menu-btn" onclick="updateSelectedTactic(true); closeMobileDropdown();" disabled>✏️ 수정</button>
                     <button id="mobile-tactic-delete-btn" class="mobile-menu-btn" onclick="deleteSelectedTactic(); closeMobileDropdown();" disabled>🗑️ 삭제</button>
                 </div>
+                <div class="io-warning-note" role="alert">⚠️ 경고: 출처가 확실한 데이터만 붙여넣으세요!</div>
                 <div class="menu-row">
                     <button type="button" class="mobile-menu-btn" onclick="openExportImportModal('tactics'); closeMobileDropdown();">📤 내보내기</button>
                     <button type="button" class="mobile-menu-btn" onclick="openExportImportModal('import'); closeMobileDropdown();">📥 불러오기</button>
@@ -310,6 +311,7 @@
         </div>
         
         <div id="size-control-container">
+            <div class="io-warning-note" role="alert">⚠️ 경고: 출처가 확실한 데이터만 붙여넣으세요!</div>
             <div class="tactics-io-row">
                 <button type="button" class="control-btn io-btn" onclick="openExportImportModal('tactics')" title="전술 내보내기 / 전부 내보내기 모달 열기">📤 내보내기</button>
                 <button type="button" class="control-btn io-btn import" onclick="openExportImportModal('import')" title="파일·압축 코드 불러오기 및 이전 백업 슬롯 복원">📥 불러오기</button>
@@ -480,6 +482,8 @@
                             <button type="button" id="io-restore-backup-btn" class="control-btn btn-green" onclick="restoreSelectedBackupSlot()" disabled>⏪ 슬롯 복원</button>
                         </div>
                     </div>
+
+                    <div class="io-warning-note" role="alert">⚠️ 경고: 출처가 확실한 데이터(코드/파일)만 불러오세요. 출처 불명 데이터는 불러오지 마세요.</div>
 
                     <div class="io-section-box">
                         <div class="io-section-title">📋 압축 코드 붙여넣기 불러오기</div>

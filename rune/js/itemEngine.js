@@ -100,6 +100,49 @@ function fromBase64(str) {
     }
 }
 
+// 🛡️ 불러온 데이터 검증 유틸리티 (XSS / 속성 탈출 / 외부 URL 차단)
+const SAFE_IMG_HOSTS = ['ddragon.leagueoflegends.com', 'raw.communitydragon.org', 'z.fow.lol'];
+
+function sanitizeImgSrc(src) {
+    if (typeof src !== 'string') return '';
+    const s = src.trim();
+    if (/^data:image\/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(s)) return s;
+    try {
+        const u = new URL(s);
+        if (u.protocol === 'https:' && SAFE_IMG_HOSTS.includes(u.hostname)) return u.href;
+    } catch (e) {}
+    return '';
+}
+
+function sanitizeText(value, maxLen) {
+    return String(value == null ? '' : value).replace(/[\u0000-\u001f\u007f]/g, '').slice(0, maxLen || 60);
+}
+
+function sanitizeItemIdList(list) {
+    if (!Array.isArray(list)) return [];
+    return list.map(v => String(v)).filter(v => /^\d{1,6}$/.test(v)).slice(0, 100);
+}
+
+function sanitizeImportedPreset(p, fallbackName) {
+    if (!p || typeof p !== 'object') return null;
+    return {
+        id: 'preset_' + Date.now() + '_' + Math.floor(Math.random() * 100000),
+        name: sanitizeText(p.name, 60) || fallbackName || '불러온 프리셋',
+        items: sanitizeItemIdList(p.items)
+    };
+}
+
+function createSafeItemImg(item) {
+    const img = document.createElement('img');
+    const safeSrc = sanitizeImgSrc(item && item.src);
+    if (safeSrc) img.src = safeSrc;
+    const name = sanitizeText(item && item.name, 80);
+    img.alt = name;
+    img.title = name;
+    img.setAttribute('data-id', sanitizeText(item && item.id, 20));
+    return img;
+}
+
 // 🖐️ 모달 헤더 드래그 이동 유틸리티 함수
 function makeModalDraggable(modalEl, handleEl) {
     if (!modalEl || !handleEl) return;
@@ -172,21 +215,24 @@ window.ITEM_ENGINE = {
             mainItems.slice(0, 3).forEach((item, idx) => {
                 const slot = document.querySelector(`#item-container .item-slot[data-slot="${idx + 1}"]`);
                 if (slot && item) {
-                    slot.innerHTML = `<img src="${item.src}" alt="${item.name}" title="${item.name}" data-id="${item.id}" />`;
+                    slot.innerHTML = '';
+                    slot.appendChild(createSafeItemImg(item));
                 }
             });
 
             if (wardItem) {
                 const wardSlot = document.querySelector('#item-container .item-slot[data-slot="4"]');
                 if (wardSlot) {
-                    wardSlot.innerHTML = `<img src="${wardItem.src}" alt="${wardItem.name}" title="${wardItem.name}" data-id="${wardItem.id}" />`;
+                    wardSlot.innerHTML = '';
+                    wardSlot.appendChild(createSafeItemImg(wardItem));
                 }
             }
 
             mainItems.slice(3, 6).forEach((item, idx) => {
                 const slot = document.querySelector(`#item-container .item-slot[data-slot="${idx + 5}"]`);
                 if (slot && item) {
-                    slot.innerHTML = `<img src="${item.src}" alt="${item.name}" title="${item.name}" data-id="${item.id}" />`;
+                    slot.innerHTML = '';
+                    slot.appendChild(createSafeItemImg(item));
                 }
             });
 
@@ -235,8 +281,9 @@ window.ITEM_ENGINE = {
                             capturedSlot.classList.add('ward-slot');
                             if (wardItem) {
                                 const img = document.createElement('img');
-                                img.src = wardItem.src;
-                                img.alt = wardItem.name;
+                                const safeWardSrc = sanitizeImgSrc(wardItem.src);
+                                if (safeWardSrc) img.src = safeWardSrc;
+                                img.alt = sanitizeText(wardItem.name, 80);
                                 capturedSlot.appendChild(img);
                             }
                         } else {
@@ -244,8 +291,9 @@ window.ITEM_ENGINE = {
                             if (mainIdx < currentStageItems.length) {
                                 const it = currentStageItems[mainIdx];
                                 const img = document.createElement('img');
-                                img.src = it.src;
-                                img.alt = it.name;
+                                const safeItemSrc = sanitizeImgSrc(it.src);
+                                if (safeItemSrc) img.src = safeItemSrc;
+                                img.alt = sanitizeText(it.name, 80);
                                 capturedSlot.appendChild(img);
                             }
                         }
@@ -446,7 +494,15 @@ window.ITEM_ENGINE = {
         try {
             const saved = localStorage.getItem('lol_item_presets');
             if (saved) {
-                presets = JSON.parse(saved);
+                const parsedSaved = JSON.parse(saved);
+                presets = (Array.isArray(parsedSaved) ? parsedSaved : []).map(p => {
+                    if (!p || typeof p !== 'object') return null;
+                    return {
+                        id: sanitizeText(p.id, 60) || ('preset_' + Date.now() + '_' + Math.floor(Math.random() * 100000)),
+                        name: sanitizeText(p.name, 60) || '무제 프리셋',
+                        items: sanitizeItemIdList(p.items)
+                    };
+                }).filter(Boolean);
             } else {
                 presets = [
                     {
@@ -628,11 +684,9 @@ window.ITEM_ENGINE = {
                 throw new Error('Invalid format');
             }
 
-            const newPreset = {
-                id: 'preset_' + Date.now(),
-                name: data.name,
-                items: data.items
-            };
+            const newPreset = sanitizeImportedPreset(data, '불러온 프리셋');
+            if (!newPreset) throw new Error('Invalid format');
+            newPreset.id = 'preset_' + Date.now();
 
             presets.push(newPreset);
             activePresetId = newPreset.id;
@@ -712,22 +766,21 @@ window.ITEM_ENGINE = {
                     return;
                 }
 
+                const safeList = importedList.map(item => sanitizeImportedPreset(item, '불러온 프리셋')).filter(Boolean).slice(0, 200);
+                if (safeList.length === 0) {
+                    alert('유효한 프리셋 데이터를 찾을 수 없습니다.');
+                    return;
+                }
+                importedList = safeList;
+
                 const appendMode = confirm(`총 ${importedList.length}개의 프리셋을 발견했습니다.\n\n[확인]: 기존 프리셋에 추가하기 (추천)\n[취소]: 기존 목록을 지우고 파일 내용으로 완전히 덮어쓰기`);
 
                 if (appendMode) {
                     importedList.forEach(item => {
-                        presets.push({
-                            id: 'preset_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
-                            name: item.name || '불러온 프리셋',
-                            items: item.items || []
-                        });
+                        presets.push(item);
                     });
                 } else {
-                    presets = importedList.map(item => ({
-                        id: 'preset_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
-                        name: item.name || '불러온 프리셋',
-                        items: item.items || []
-                    }));
+                    presets = importedList.slice();
                 }
 
                 if (presets.length > 0) {
@@ -926,7 +979,7 @@ window.ITEM_ENGINE = {
 
             const recTitle = document.createElement('div');
             recTitle.classList.add('preset-recommend-title');
-            recTitle.innerHTML = `📦 <span>[${activePreset.name}] 프리셋 아이템 목록</span>`;
+            recTitle.textContent = `📦 [${activePreset.name}] 프리셋 아이템 목록`;
 
             const recGrid = document.createElement('div');
             recGrid.classList.add('preset-recommend-grid');

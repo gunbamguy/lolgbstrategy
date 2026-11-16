@@ -113,6 +113,19 @@ body {
     border-radius: 10px;
     border: 1px solid rgba(208, 184, 108, 0.3);
 }
+.io-warning-note {
+    color: #ff4d4d;
+    font-size: 11px;
+    font-weight: bold;
+    text-align: center;
+    line-height: 1.4;
+    word-break: keep-all;
+    background: rgba(255, 77, 77, 0.12);
+    border: 1px solid rgba(255, 77, 77, 0.55);
+    border-radius: 4px;
+    padding: 4px 6px;
+    margin-bottom: 4px;
+}
 .tactics-io-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
