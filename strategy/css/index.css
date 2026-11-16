@@ -33,7 +33,9 @@ body {
 }
 
 #sidebar-left { 
-    border-right: 1px solid #333; 
+    background: linear-gradient(180deg, #161a24 0%, #0f1219 100%);
+    border-right: 1px solid rgba(200, 155, 60, 0.32); 
+    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.65);
     overflow: hidden !important;
 }
 #champList {
@@ -45,12 +47,12 @@ body {
 #right-panel-wrapper {
     width: 260px;
     flex-shrink: 0;
-    background-color: var(--sidebar-bg);
-    border-left: 1px solid #333;
+    background: linear-gradient(180deg, #161a24 0%, #0f1219 100%);
+    border-left: 1px solid rgba(200, 155, 60, 0.32);
     display: flex;
     flex-direction: column;
     z-index: 20;
-    box-shadow: 0 0 10px rgba(0,0,0,0.5);
+    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.65);
 }
 #sidebar-right {
     border-left: none;
@@ -223,11 +225,12 @@ body {
     min-height: 40px;
     flex-shrink: 0;
     box-sizing: border-box;
-    background-color: #222;
+    background: linear-gradient(180deg, #1b202c 0%, #11151e 100%);
     display: flex;
     align-items: center;
     padding: 0 12px;
-    border-bottom: 1px solid #333;
+    border-bottom: 1px solid rgba(200, 155, 60, 0.35);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
     gap: 10px;
     overflow: hidden;
 }
@@ -268,7 +271,30 @@ body {
     flex: 1 1 0%;
     min-width: 0;
     min-height: 0;
-    background-color: #111;
+    padding: 22px;
+    box-sizing: border-box;
+    background-color: #070a10;
+    background-image:
+        radial-gradient(circle at 50% 48%, rgba(10, 200, 185, 0.07) 0%, rgba(10, 200, 185, 0.02) 32%, transparent 62%),
+        radial-gradient(ellipse at 50% 50%, rgba(200, 155, 60, 0.08) 0%, transparent 68%),
+        repeating-linear-gradient(
+            45deg,
+            rgba(200, 155, 60, 0.028) 0px,
+            rgba(200, 155, 60, 0.028) 1px,
+            transparent 1px,
+            transparent 26px
+        ),
+        repeating-linear-gradient(
+            -45deg,
+            rgba(10, 200, 185, 0.022) 0px,
+            rgba(10, 200, 185, 0.022) 1px,
+            transparent 1px,
+            transparent 26px
+        ),
+        radial-gradient(ellipse at center, #141c2b 0%, #090d15 58%, #04060a 100%);
+    box-shadow:
+        inset 0 0 70px rgba(0, 0, 0, 0.88),
+        inset 0 0 20px rgba(200, 155, 60, 0.08);
     display: flex;
     justify-content: flex-start;
     align-items: flex-start;
@@ -276,6 +302,27 @@ body {
     overflow: auto;
     user-select: none;
     cursor: grab;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(200, 155, 60, 0.45) #0a0e14;
+}
+#map-area::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+}
+#map-area::-webkit-scrollbar-track {
+    background: #080b11;
+    border: 1px solid rgba(200, 155, 60, 0.12);
+}
+#map-area::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, rgba(200, 155, 60, 0.55) 0%, rgba(120, 90, 40, 0.65) 100%);
+    border-radius: 5px;
+    border: 1px solid rgba(240, 230, 210, 0.18);
+}
+#map-area::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, rgba(208, 184, 108, 0.85) 0%, rgba(160, 120, 50, 0.9) 100%);
+}
+#map-area::-webkit-scrollbar-corner {
+    background: #080b11;
 }
 #map-area.panning {
     cursor: grabbing;
@@ -287,6 +334,62 @@ body {
     position: relative;
     flex-shrink: 0;
     margin: auto;
+}
+
+/* 에디터 뷰포트(#map-area) 내 Hextech 코너 브래킷 및 중앙 룬 장식 (obs.html 투명 배경 미간섭) */
+#map-area #zoom-container::before,
+#map-area #zoom-container::after {
+    content: '';
+    position: absolute;
+    inset: -10px;
+    pointer-events: none;
+    z-index: 25;
+}
+#map-area #zoom-container::before {
+    background-image:
+        linear-gradient(90deg, #f0e6d2 0%, #c89b3c 65%, transparent 100%),
+        linear-gradient(180deg, #f0e6d2 0%, #c89b3c 65%, transparent 100%),
+        linear-gradient(270deg, #f0e6d2 0%, #c89b3c 65%, transparent 100%),
+        linear-gradient(180deg, #f0e6d2 0%, #c89b3c 65%, transparent 100%),
+        linear-gradient(90deg, #f0e6d2 0%, #c89b3c 65%, transparent 100%),
+        linear-gradient(0deg, #f0e6d2 0%, #c89b3c 65%, transparent 100%),
+        linear-gradient(270deg, #f0e6d2 0%, #c89b3c 65%, transparent 100%),
+        linear-gradient(0deg, #f0e6d2 0%, #c89b3c 65%, transparent 100%);
+    background-position:
+        0 0, 0 0,
+        100% 0, 100% 0,
+        0 100%, 0 100%,
+        100% 100%, 100% 100%;
+    background-size:
+        34px 2px, 2px 34px,
+        34px 2px, 2px 34px,
+        34px 2px, 2px 34px,
+        34px 2px, 2px 34px;
+    background-repeat: no-repeat;
+    filter: drop-shadow(0 0 4px rgba(200, 155, 60, 0.55));
+}
+#map-area #zoom-container::after {
+    background-image:
+        radial-gradient(circle, rgba(10, 200, 185, 0.95) 0%, rgba(10, 200, 185, 0.35) 45%, transparent 72%),
+        linear-gradient(90deg, transparent 0%, rgba(200, 155, 60, 0.85) 25%, #f0e6d2 50%, rgba(200, 155, 60, 0.85) 75%, transparent 100%),
+        radial-gradient(circle, rgba(10, 200, 185, 0.95) 0%, rgba(10, 200, 185, 0.35) 45%, transparent 72%),
+        linear-gradient(90deg, transparent 0%, rgba(200, 155, 60, 0.85) 25%, #f0e6d2 50%, rgba(200, 155, 60, 0.85) 75%, transparent 100%),
+        radial-gradient(circle, rgba(10, 200, 185, 0.95) 0%, rgba(10, 200, 185, 0.35) 45%, transparent 72%),
+        linear-gradient(180deg, transparent 0%, rgba(200, 155, 60, 0.85) 25%, #f0e6d2 50%, rgba(200, 155, 60, 0.85) 75%, transparent 100%),
+        radial-gradient(circle, rgba(10, 200, 185, 0.95) 0%, rgba(10, 200, 185, 0.35) 45%, transparent 72%),
+        linear-gradient(180deg, transparent 0%, rgba(200, 155, 60, 0.85) 25%, #f0e6d2 50%, rgba(200, 155, 60, 0.85) 75%, transparent 100%);
+    background-position:
+        50% 0, 50% 2px,
+        50% 100%, 50% calc(100% - 2px),
+        0 50%, 2px 50%,
+        100% 50%, calc(100% - 2px) 50%;
+    background-size:
+        10px 10px, 110px 2px,
+        10px 10px, 110px 2px,
+        10px 10px, 2px 110px,
+        10px 10px, 2px 110px;
+    background-repeat: no-repeat;
+    filter: drop-shadow(0 0 5px rgba(10, 200, 185, 0.4));
 }
 
 #rift-map {
@@ -304,6 +407,19 @@ body {
     /* 터치 제스처는 전부 JS 가 처리한다 (1손가락=그리기/드래그, 2손가락=줌/패닝).
        브라우저 기본 스크롤/더블탭 줌이 끼어들어 좌표가 어긋나지 않도록 차단 */
     touch-action: none;
+}
+
+/* border-width 2px 및 좌표계 크기는 유지한 채 Hextech 액자 프레임 적용 */
+#map-area #rift-map {
+    border: 2px solid #c89b3c;
+    outline: 1px solid rgba(200, 155, 60, 0.38);
+    outline-offset: 6px;
+    box-shadow:
+        0 0 0 6px rgba(7, 10, 16, 0.94),
+        0 0 0 7px rgba(200, 155, 60, 0.35),
+        0 12px 45px rgba(0, 0, 0, 0.95),
+        0 0 55px rgba(10, 200, 185, 0.12),
+        0 0 24px rgba(200, 155, 60, 0.22);
 }
 
 #structure-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; }
@@ -336,18 +452,19 @@ svg line.selected {
 
 .placed-champion {
     border-radius: 50%;
-    border: 2px solid #fff;
+    border: 2.5px solid #ffffff;
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.9);
     z-index: 110;
     background-color: #000;
     box-sizing: border-box;
 }
 .placed-champion.team-blue {
-    border-color: #448aff;
-    box-shadow: 0 0 6px rgba(68, 138, 255, 0.75);
+    border: 3px solid #00b0ff;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.85), 0 0 9px rgba(0, 176, 255, 0.9);
 }
 .placed-champion.team-red {
-    border-color: #ff5252;
-    box-shadow: 0 0 6px rgba(255, 82, 82, 0.75);
+    border: 3px solid #ff3d3d;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.85), 0 0 9px rgba(255, 61, 61, 0.9);
 }
 .ghost-champion {
     opacity: 0.35 !important;
@@ -404,6 +521,18 @@ svg line.selected {
     border-color: var(--accent-color) !important;
     box-shadow: 0 0 8px rgba(208, 184, 108, 0.8) !important;
 }
+.placed-champion.team-blue.selected {
+    border-color: #00b0ff !important;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.85), 0 0 10px rgba(0, 176, 255, 0.95) !important;
+    outline: 2px solid var(--accent-color);
+    outline-offset: 1px;
+}
+.placed-champion.team-red.selected {
+    border-color: #ff3d3d !important;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.85), 0 0 10px rgba(255, 61, 61, 0.95) !important;
+    outline: 2px solid var(--accent-color);
+    outline-offset: 1px;
+}
 
 .arrow-control {
     width: 12px; height: 12px; border-radius: 50%; position: absolute;
@@ -454,8 +583,9 @@ svg line.selected {
     min-height: 90px;
     flex-shrink: 0;
     box-sizing: border-box;
-    background-color: var(--timeline-bg);
-    border-top: 1px solid #444;
+    background: linear-gradient(180deg, #141822 0%, #0c0f16 100%);
+    border-top: 1px solid rgba(200, 155, 60, 0.35);
+    box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.65);
     display: flex;
     align-items: center;
     padding: 0 15px;
@@ -502,8 +632,78 @@ svg line.selected {
 .menu-item.danger { color: #ff6b6b; }
 
 #size-control-container {
-    padding: 8px 16px !important;
-    gap: 4px !important;
+    padding: 8px 14px !important;
+    background: rgba(0, 0, 0, 0.55);
+    border-top: 1px solid #333;
+    display: flex;
+    flex-direction: column;
+    gap: 5px !important;
+    flex-shrink: 0;
+}
+.size-control-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2px;
+}
+.auto-size-label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: #ccc;
+    cursor: pointer;
+    user-select: none;
+}
+.auto-size-label input[type="checkbox"] {
+    cursor: pointer;
+    accent-color: var(--accent-color);
+    margin: 0;
+}
+.size-reset-btn {
+    background: #2b2b30;
+    color: var(--accent-color);
+    border: 1px solid rgba(208, 184, 108, 0.45);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 10px;
+    font-weight: bold;
+    cursor: pointer;
+}
+.size-reset-btn:hover {
+    background: var(--accent-color);
+    color: #000;
+}
+.size-slider-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.size-row-label {
+    font-size: 11px;
+    color: #ccc;
+    font-weight: bold;
+    width: 68px;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+.size-slider-row input[type="range"] {
+    flex: 1;
+    accent-color: var(--accent-color);
+    cursor: pointer;
+    background: #444;
+    height: 5px;
+    border-radius: 3px;
+    outline: none;
+}
+.size-row-val {
+    font-size: 11px;
+    color: var(--accent-color);
+    font-weight: bold;
+    font-family: monospace;
+    width: 34px;
+    text-align: right;
+    flex-shrink: 0;
 }
 
 /* 줌 컨트롤 UI */

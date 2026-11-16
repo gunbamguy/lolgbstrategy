@@ -5,9 +5,12 @@ const MAP_BASE_HEIGHT = 800;
 let timelineData = [ [] ];
 let currentStepIndex = 0;
 let myTeamSide = 'blue';
+let bluePreset = [];
+let redPreset = [];
 let zoomLevel = 1.0;
 let champIconSize = 40;
 let minionIconSize = 60;
+let objectIconSize = 32;
 let currentVersion = "14.5.1"; // 기본값 (메시지 수신 시 업데이트됨)
 let lastViewport = {
     mapCenterX: MAP_BASE_WIDTH / 2,
@@ -90,9 +93,12 @@ function handleMessage(data) {
         timelineData = data.timelineData || [ [] ];
         currentStepIndex = data.currentStepIndex || 0;
         myTeamSide = data.myTeamSide || 'blue';
+        if (Array.isArray(data.bluePreset)) bluePreset = data.bluePreset;
+        if (Array.isArray(data.redPreset)) redPreset = data.redPreset;
         zoomLevel = data.zoomLevel || 1.0;
         champIconSize = data.champIconSize || 40;
         minionIconSize = data.minionIconSize || 60;
+        objectIconSize = data.objectIconSize || 32;
         if (data.currentVersion) {
             currentVersion = data.currentVersion;
         }
@@ -179,6 +185,15 @@ function renderScene() {
     renderStructures();
 }
 
+function resolveChampionTeam(obj) {
+    if (!obj) return null;
+    if (obj.team === 'none') return null;
+    if (obj.team === 'blue' || obj.team === 'red') return obj.team;
+    if (bluePreset.includes(obj.champId)) return 'blue';
+    if (redPreset.includes(obj.champId)) return 'red';
+    return null;
+}
+
 function renderObjects() {
     const currentObjs = timelineData[currentStepIndex];
     const allDoms = Array.from(mapEl.querySelectorAll('.placed-object:not(.ghost-champion), .arrow-control.start'));
@@ -191,7 +206,8 @@ function renderObjects() {
 
     currentObjs.forEach(obj => {
         if (obj.type === 'champion') {
-            const teamClass = obj.team ? `team-${obj.team}` : '';
+            const effectiveTeam = resolveChampionTeam(obj);
+            const teamClass = effectiveTeam ? `team-${effectiveTeam}` : '';
             renderDOM(obj, `placed-object placed-champion ${teamClass}`.trim());
         }
         else if (obj.type === 'minion') {
@@ -231,6 +247,8 @@ function renderGhosts() {
         const dist = Math.hypot(obj.x - prevObj.x, obj.y - prevObj.y);
         if (dist <= 5) return;
 
+        const effectiveTeam = resolveChampionTeam(obj);
+
         // 1. 이동 궤적 점선
         const ghostLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
         ghostLine.setAttribute("class", "ghost-line");
@@ -239,7 +257,7 @@ function renderGhosts() {
         ghostLine.setAttribute("y1", prevObj.y);
         ghostLine.setAttribute("x2", obj.x);
         ghostLine.setAttribute("y2", obj.y);
-        const lineColor = obj.team === 'blue' ? 'rgba(68, 138, 255, 0.65)' : (obj.team === 'red' ? 'rgba(255, 82, 82, 0.65)' : 'rgba(255, 255, 255, 0.5)');
+        const lineColor = effectiveTeam === 'blue' ? 'rgba(0, 176, 255, 0.7)' : (effectiveTeam === 'red' ? 'rgba(255, 61, 61, 0.7)' : 'rgba(255, 255, 255, 0.5)');
         ghostLine.setAttribute("stroke", lineColor);
         ghostLine.setAttribute("stroke-width", "2.5");
         ghostLine.setAttribute("stroke-dasharray", "5,5");
@@ -248,7 +266,7 @@ function renderGhosts() {
 
         // 2. 이전 위치 반투명 잔상 아이콘
         const ghostEl = document.createElement('div');
-        const teamClass = obj.team ? `team-${obj.team}` : '';
+        const teamClass = effectiveTeam ? `team-${effectiveTeam}` : '';
         ghostEl.className = `placed-object placed-champion ghost-champion ${teamClass}`.trim();
         ghostEl.setAttribute('data-ghost-uid', obj.uid);
         if (obj.champId && obj.champId !== "Poro") {
@@ -289,8 +307,9 @@ function renderDOM(obj, className) {
     }
 
     if (obj.type === 'champion') {
-        el.classList.toggle('team-blue', obj.team === 'blue');
-        el.classList.toggle('team-red', obj.team === 'red');
+        const effectiveTeam = resolveChampionTeam(obj);
+        el.classList.toggle('team-blue', effectiveTeam === 'blue');
+        el.classList.toggle('team-red', effectiveTeam === 'red');
     }
 
     if (obj.type === 'minion') {
@@ -305,7 +324,9 @@ function renderDOM(obj, className) {
     el.classList.toggle('dimmed', Boolean(obj.dimmed));
 
     // 크기 설정
-    const baseSize = obj.type === 'champion' ? champIconSize : minionIconSize;
+    const baseSize = obj.type === 'champion'
+        ? champIconSize
+        : (obj.type === 'minion' ? minionIconSize : objectIconSize);
     el.style.width = baseSize + "px";
     el.style.height = baseSize + "px";
 

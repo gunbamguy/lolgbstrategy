@@ -313,23 +313,29 @@
             </div>
         </div>
         
-        <div id="size-control-container" style="padding: 10px 20px; background: rgba(0,0,0,0.5); border-top: 1px solid #333; display: flex; flex-direction: column; gap: 6px; flex-shrink: 0;">
-            <div style="display: flex; justify-content: space-between; font-size: 13px; color: #ccc; font-weight: bold;">
-                <span>👤 챔피언 크기</span>
-                <span id="size-indicator">40px</span>
+        <div id="size-control-container">
+            <div class="size-control-header">
+                <label class="auto-size-label" title="확대(Zoom In) 시 아이콘이 맵을 과도하게 가리지 않도록 설정한 기준 크기에 비례해 자동 축소합니다.">
+                    <input type="checkbox" id="auto-size-checkbox" checked>
+                    <span>배율에 맞춰 자동 스케일</span>
+                </label>
+                <button type="button" class="size-reset-btn" onclick="resetIconSizes()" title="아이콘 크기를 기본값(챔피언 40 / 미니언 60 / 오브젝트 32)으로 초기화">↺ 기본값</button>
             </div>
-            <input type="range" id="size-slider" min="15" max="70" value="40" step="5" style="width: 100%; accent-color: var(--accent-color); cursor: pointer; background: #444; height: 6px; border-radius: 3px; outline: none;">
-            
-            <div style="display: flex; justify-content: space-between; font-size: 13px; color: #ccc; font-weight: bold; margin-top: 4px;">
-                <span>👾 미니언 / 오브젝트 크기</span>
-                <span id="minion-size-indicator">60px</span>
+            <div class="size-slider-row">
+                <span class="size-row-label">👤 챔피언</span>
+                <input type="range" id="size-slider" min="16" max="72" value="40" step="2">
+                <span id="size-indicator" class="size-row-val">40px</span>
             </div>
-            <input type="range" id="minion-size-slider" min="20" max="130" value="60" step="4" style="width: 100%; accent-color: var(--accent-color); cursor: pointer; background: #444; height: 6px; border-radius: 3px; outline: none;">
-
-            <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #aaa; cursor: pointer; margin-top: 4px; user-select: none;">
-                <input type="checkbox" id="auto-size-checkbox" checked style="cursor: pointer; accent-color: var(--accent-color);">
-                <span>화면 배율에 따라 크기 자동 조정</span>
-            </label>
+            <div class="size-slider-row">
+                <span class="size-row-label">⚔️ 미니언</span>
+                <input type="range" id="minion-size-slider" min="20" max="120" value="60" step="2">
+                <span id="minion-size-indicator" class="size-row-val">60px</span>
+            </div>
+            <div class="size-slider-row">
+                <span class="size-row-label">👾 오브젝트</span>
+                <input type="range" id="object-size-slider" min="16" max="80" value="32" step="2">
+                <span id="object-size-indicator" class="size-row-val">32px</span>
+            </div>
         </div>
         <div id="zoom-controls" style="flex-shrink: 0;">
             <button class="zoom-btn" onclick="adjustZoom(0.1)" title="Zoom In">+</button>
@@ -340,6 +346,12 @@
     </div>
 
     <div id="context-menu">
+        <div id="menu-team-group" style="display: none; padding: 6px 10px; border-bottom: 1px solid #444; gap: 4px; align-items: center;">
+            <span style="font-size: 11px; color: #aaa; margin-right: 4px;">테두리:</span>
+            <button type="button" class="tool-btn" onclick="setContextChampionTeam('blue')" style="padding: 2px 6px; font-size: 11px; border-color: #00b0ff; color: #7cd4ff;">🔵 블루</button>
+            <button type="button" class="tool-btn" onclick="setContextChampionTeam('red')" style="padding: 2px 6px; font-size: 11px; border-color: #ff3d3d; color: #ff8a8a;">🔴 레드</button>
+            <button type="button" class="tool-btn" onclick="setContextChampionTeam('none')" style="padding: 2px 6px; font-size: 11px; border-color: #fff; color: #fff;">⚪ 흰색</button>
+        </div>
         <div class="menu-item" id="menu-add-arrow">➤ 화살표 추가/제거</div>
         <div class="menu-item danger" id="menu-delete">✖ 삭제</div>
     </div>

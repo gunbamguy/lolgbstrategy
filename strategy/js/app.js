@@ -10,9 +10,14 @@ let showGhostChampions = true;
 
 let currentVersion = "";
 let championData = {};
+let baseChampSize = 40;
+let baseMinionSize = 60;
+let baseObjectSize = 32;
 let champIconSize = 40;
 let minionIconSize = 60;
+let objectIconSize = 32;
 let isAutoSizeEnabled = true;
+const ICON_SIZE_STORAGE_KEY = 'lol_strategy_icon_sizes';
 
 function showToast(message) {
     let container = document.getElementById('toast-container');
@@ -234,21 +239,36 @@ async function init() {
             syncObsViewport();
         });
 
-        // 챔피언 크기 슬라이더 이벤트 바인딩
-        document.getElementById('size-slider').addEventListener('input', (e) => {
-            champIconSize = parseInt(e.target.value);
-            document.getElementById('size-indicator').innerText = champIconSize + "px";
-            renderScene();
-        });
+        // 아이콘 크기 설정 로드 및 슬라이더 이벤트 바인딩 (3종 분리 + 배율 비례 스케일)
+        loadIconSizeSettings();
 
-        // 👾 미니언/오브젝트 크기 슬라이더 이벤트 바인딩
+        const sizeSlider = document.getElementById('size-slider');
+        if (sizeSlider) {
+            sizeSlider.value = baseChampSize;
+            sizeSlider.addEventListener('input', (e) => {
+                baseChampSize = parseInt(e.target.value, 10);
+                saveIconSizeSettings();
+                applyAutoSize();
+            });
+        }
+
         const minionSizeSlider = document.getElementById('minion-size-slider');
         if (minionSizeSlider) {
+            minionSizeSlider.value = baseMinionSize;
             minionSizeSlider.addEventListener('input', (e) => {
-                minionIconSize = parseInt(e.target.value);
-                const indicator = document.getElementById('minion-size-indicator');
-                if (indicator) indicator.innerText = minionIconSize + "px";
-                renderScene();
+                baseMinionSize = parseInt(e.target.value, 10);
+                saveIconSizeSettings();
+                applyAutoSize();
+            });
+        }
+
+        const objectSizeSlider = document.getElementById('object-size-slider');
+        if (objectSizeSlider) {
+            objectSizeSlider.value = baseObjectSize;
+            objectSizeSlider.addEventListener('input', (e) => {
+                baseObjectSize = parseInt(e.target.value, 10);
+                saveIconSizeSettings();
+                applyAutoSize();
             });
         }
 
@@ -263,25 +283,17 @@ async function init() {
             });
         }
 
-        // 자동 조절 체크박스 이벤트 바인딩 및 초기화
+        // 자동 조절 체크박스 이벤트 바인딩 (슬라이더 잠금 없이 기준값 비례 스케일 적용)
         const autoSizeCheckbox = document.getElementById('auto-size-checkbox');
-        const sizeSlider = document.getElementById('size-slider');
-        
-        // 기본값 반영 및 초기화
-        sizeSlider.disabled = isAutoSizeEnabled;
-        if (minionSizeSlider) minionSizeSlider.disabled = isAutoSizeEnabled;
-        if (isAutoSizeEnabled) {
-            applyAutoSize();
-        }
-        
-        autoSizeCheckbox.addEventListener('change', (e) => {
-            isAutoSizeEnabled = e.target.checked;
-            sizeSlider.disabled = isAutoSizeEnabled;
-            if (minionSizeSlider) minionSizeSlider.disabled = isAutoSizeEnabled;
-            if (isAutoSizeEnabled) {
+        if (autoSizeCheckbox) {
+            autoSizeCheckbox.checked = isAutoSizeEnabled;
+            autoSizeCheckbox.addEventListener('change', (e) => {
+                isAutoSizeEnabled = e.target.checked;
+                saveIconSizeSettings();
                 applyAutoSize();
-            }
-        });
+            });
+        }
+        applyAutoSize();
 
         // 전역 드래그 클린업 바인딩
         window.addEventListener('dragend', () => {
@@ -310,28 +322,65 @@ async function init() {
     } catch (e) { console.error(e); }
 }
 
-function applyAutoSize() {
-    if (!isAutoSizeEnabled) return;
-    // 챔피언 비율 계산: 120% (1.2) -> 40px, 400% (4.0) -> 15px
-    let calculatedChampSize = Math.round(40 - (25 / 2.8) * (zoomLevel - 1.2));
-    calculatedChampSize = Math.max(15, Math.min(70, calculatedChampSize));
-    champIconSize = calculatedChampSize;
-    
-    // 미니언/오브젝트 비율 계산: 120% (1.2) -> 60px, 400% (4.0) -> 28px
-    let calculatedMinionSize = Math.round(60 - (32 / 2.8) * (zoomLevel - 1.2));
-    calculatedMinionSize = Math.max(20, Math.min(130, calculatedMinionSize));
-    minionIconSize = calculatedMinionSize;
+function loadIconSizeSettings() {
+    try {
+        const raw = localStorage.getItem(ICON_SIZE_STORAGE_KEY);
+        if (!raw) return;
+        const saved = JSON.parse(raw);
+        if (typeof saved.champ === 'number') baseChampSize = Math.max(16, Math.min(72, saved.champ));
+        if (typeof saved.minion === 'number') baseMinionSize = Math.max(20, Math.min(120, saved.minion));
+        if (typeof saved.object === 'number') baseObjectSize = Math.max(16, Math.min(80, saved.object));
+        if (typeof saved.auto === 'boolean') isAutoSizeEnabled = saved.auto;
+    } catch (e) {}
+}
 
-    // UI 업데이트
+function saveIconSizeSettings() {
+    try {
+        localStorage.setItem(ICON_SIZE_STORAGE_KEY, JSON.stringify({
+            champ: baseChampSize,
+            minion: baseMinionSize,
+            object: baseObjectSize,
+            auto: isAutoSizeEnabled
+        }));
+    } catch (e) {}
+}
+
+function resetIconSizes() {
+    baseChampSize = 40;
+    baseMinionSize = 60;
+    baseObjectSize = 32;
+
     const sizeSlider = document.getElementById('size-slider');
-    if (sizeSlider) sizeSlider.value = calculatedChampSize;
-    const sizeIndicator = document.getElementById('size-indicator');
-    if (sizeIndicator) sizeIndicator.innerText = calculatedChampSize + "px";
-    
+    if (sizeSlider) sizeSlider.value = baseChampSize;
     const minionSizeSlider = document.getElementById('minion-size-slider');
-    if (minionSizeSlider) minionSizeSlider.value = calculatedMinionSize;
+    if (minionSizeSlider) minionSizeSlider.value = baseMinionSize;
+    const objectSizeSlider = document.getElementById('object-size-slider');
+    if (objectSizeSlider) objectSizeSlider.value = baseObjectSize;
+
+    saveIconSizeSettings();
+    applyAutoSize();
+    showToast('↺ 아이콘 크기가 기본값으로 초기화되었습니다.');
+}
+
+function applyAutoSize() {
+    // 확대(zoomLevel > 1.0) 시 사용자 기준 크기에 비례 계수를 곱해 자연스럽게 축소 보정
+    const scaleFactor = (isAutoSizeEnabled && zoomLevel > 1.0)
+        ? Math.pow(zoomLevel, -0.65)
+        : 1.0;
+
+    champIconSize = Math.max(12, Math.round(baseChampSize * scaleFactor));
+    minionIconSize = Math.max(16, Math.round(baseMinionSize * scaleFactor));
+    objectIconSize = Math.max(12, Math.round(baseObjectSize * scaleFactor));
+
+    // UI 인디케이터 업데이트 (슬라이더는 사용자 기준값을 그대로 유지)
+    const sizeIndicator = document.getElementById('size-indicator');
+    if (sizeIndicator) sizeIndicator.innerText = champIconSize + "px";
+
     const minionSizeIndicator = document.getElementById('minion-size-indicator');
-    if (minionSizeIndicator) minionSizeIndicator.innerText = calculatedMinionSize + "px";
+    if (minionSizeIndicator) minionSizeIndicator.innerText = minionIconSize + "px";
+
+    const objectSizeIndicator = document.getElementById('object-size-indicator');
+    if (objectSizeIndicator) objectSizeIndicator.innerText = objectIconSize + "px";
 
     renderScene();
 }
@@ -931,14 +980,32 @@ function addChampToPreset(champKey, team) {
     }
 }
 
-function addSelectedToPreset(team) {
+function addSelectedToPreset(role) {
     if (!selectedChampKey) return;
-    addChampToPreset(selectedChampKey, team);
+    const targetTeam = role === 'blue'
+        ? (myTeamSide === 'blue' ? 'blue' : 'red')
+        : (myTeamSide === 'blue' ? 'red' : 'blue');
+    addChampToPreset(selectedChampKey, targetTeam);
+}
+
+function resolveChampionTeam(obj) {
+    if (!obj) return null;
+    if (obj.team === 'none') return null;
+    if (obj.team === 'blue' || obj.team === 'red') return obj.team;
+    if (bluePreset.includes(obj.champId)) return 'blue';
+    if (redPreset.includes(obj.champId)) return 'red';
+    return null;
 }
 
 function renderPresets() {
     renderSinglePreset('blue', bluePreset);
     renderSinglePreset('red', redPreset);
+    // 프리셋 변동 시 수동 고정되지 않은 배치 챔피언 테두리도 즉시 갱신
+    if (typeof renderObjects === 'function' && timelineData[currentStepIndex]) {
+        renderObjects();
+        renderGhosts();
+        if (typeof syncObsScene === 'function') syncObsScene();
+    }
 }
 
 function presetDragStart(ev, team) {
@@ -1038,13 +1105,13 @@ function renderLeftSidebar(filter = "") {
 
             img.addEventListener('dblclick', (e) => {
                 e.preventDefault();
-                addChampToPreset(key, 'blue');
+                addChampToPreset(key, myTeamSide === 'blue' ? 'blue' : 'red');
             });
 
             img.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                addChampToPreset(key, 'red');
+                addChampToPreset(key, myTeamSide === 'blue' ? 'red' : 'blue');
             });
             
             list.appendChild(img);
@@ -2010,7 +2077,8 @@ function renderObjects() {
 
     currentObjs.forEach(obj => {
         if (obj.type === 'champion') {
-            const teamClass = obj.team ? `team-${obj.team}` : '';
+            const effectiveTeam = resolveChampionTeam(obj);
+            const teamClass = effectiveTeam ? `team-${effectiveTeam}` : '';
             renderDOM(obj, `placed-object placed-champion ${teamClass}`.trim());
         }
         else if (obj.type === 'minion') {
@@ -2046,6 +2114,8 @@ function renderGhosts() {
         const dist = Math.hypot(obj.x - prevObj.x, obj.y - prevObj.y);
         if (dist <= 5) return;
 
+        const effectiveTeam = resolveChampionTeam(obj);
+
         // 1. 이동 궤적 점선
         const ghostLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
         ghostLine.setAttribute("class", "ghost-line");
@@ -2054,7 +2124,7 @@ function renderGhosts() {
         ghostLine.setAttribute("y1", prevObj.y);
         ghostLine.setAttribute("x2", obj.x);
         ghostLine.setAttribute("y2", obj.y);
-        const lineColor = obj.team === 'blue' ? 'rgba(68, 138, 255, 0.65)' : (obj.team === 'red' ? 'rgba(255, 82, 82, 0.65)' : 'rgba(255, 255, 255, 0.5)');
+        const lineColor = effectiveTeam === 'blue' ? 'rgba(0, 176, 255, 0.7)' : (effectiveTeam === 'red' ? 'rgba(255, 61, 61, 0.7)' : 'rgba(255, 255, 255, 0.5)');
         ghostLine.setAttribute("stroke", lineColor);
         ghostLine.setAttribute("stroke-width", "2.5");
         ghostLine.setAttribute("stroke-dasharray", "5,5");
@@ -2063,7 +2133,7 @@ function renderGhosts() {
 
         // 2. 이전 위치 반투명 잔상 아이콘
         const ghostEl = document.createElement('div');
-        const teamClass = obj.team ? `team-${obj.team}` : '';
+        const teamClass = effectiveTeam ? `team-${effectiveTeam}` : '';
         ghostEl.className = `placed-object placed-champion ghost-champion ${teamClass}`.trim();
         ghostEl.setAttribute('data-ghost-uid', obj.uid);
         if (obj.champId && obj.champId !== "Poro") {
@@ -2110,12 +2180,22 @@ function renderDOM(obj, className) {
             el.classList.add('selected');
             renderArrows();
         });
-        // 더블클릭 시 캠프/오브젝트 반투명(처치/소모) 상태 토글
+        // 더블클릭 시 캠프/오브젝트는 반투명 토글, 챔피언은 테두리 진영 순환(흰색 -> 블루 -> 레드)
         el.addEventListener('dblclick', (e) => {
             e.preventDefault();
             e.stopPropagation();
             const targetObj = el._dataObj;
-            if (!targetObj || targetObj.type === 'champion') return;
+            if (!targetObj) return;
+            if (targetObj.type === 'champion') {
+                const cur = resolveChampionTeam(targetObj);
+                const next = cur === null ? 'blue' : (cur === 'blue' ? 'red' : 'none');
+                targetObj.team = next;
+                renderScene();
+                recordHistory();
+                const label = next === 'blue' ? '🔵 블루 테두리' : (next === 'red' ? '🔴 레드 테두리' : '⚪ 기본(하얀색) 테두리');
+                showToast(`테두리 변경: ${label}`);
+                return;
+            }
             targetObj.dimmed = !targetObj.dimmed;
             renderScene();
             recordHistory();
@@ -2129,8 +2209,9 @@ function renderDOM(obj, className) {
     el._dataObj = obj;
 
     if (obj.type === 'champion') {
-        el.classList.toggle('team-blue', obj.team === 'blue');
-        el.classList.toggle('team-red', obj.team === 'red');
+        const effectiveTeam = resolveChampionTeam(obj);
+        el.classList.toggle('team-blue', effectiveTeam === 'blue');
+        el.classList.toggle('team-red', effectiveTeam === 'red');
     }
 
     if (obj.type === 'minion') {
@@ -2152,7 +2233,9 @@ function renderDOM(obj, className) {
     el.classList.toggle('dimmed', Boolean(obj.dimmed));
 
     // 챔피언 / 미니언 / 오브젝트 별 실시간 크기 적용
-    const baseSize = obj.type === 'champion' ? champIconSize : minionIconSize;
+    const baseSize = obj.type === 'champion'
+        ? champIconSize
+        : (obj.type === 'minion' ? minionIconSize : objectIconSize);
     el.style.width = baseSize + "px";
     el.style.height = baseSize + "px";
 
@@ -2450,6 +2533,10 @@ function showContextMenu(x, y, uid) {
     contextMenu.style.top = y + 'px';
     const obj = timelineData[currentStepIndex].find(o => o.uid === uid);
     if (!obj) return;
+    const teamMenu = document.getElementById('menu-team-group');
+    if (teamMenu) {
+        teamMenu.style.display = obj.type === 'champion' ? 'flex' : 'none';
+    }
     const arrowMenu = document.getElementById('menu-add-arrow');
     if (obj.type === 'free_arrow' || obj.type === 'pen_stroke') {
         arrowMenu.style.display = 'none';
@@ -2457,6 +2544,17 @@ function showContextMenu(x, y, uid) {
         arrowMenu.style.display = 'block';
         arrowMenu.innerText = (obj.arrow && obj.arrow.hasArrow) ? "➤ 화살표 제거" : "➤ 화살표 추가";
     }
+}
+
+function setContextChampionTeam(teamVal) {
+    if (!contextTargetUid) return;
+    const obj = timelineData[currentStepIndex].find(o => o.uid === contextTargetUid);
+    if (!obj || obj.type !== 'champion') return;
+    obj.team = teamVal;
+    contextMenu.style.display = 'none';
+    contextTargetUid = null;
+    renderScene();
+    recordHistory();
 }
 document.addEventListener('click', () => { contextMenu.style.display = 'none'; contextTargetUid = null; });
 document.getElementById('menu-delete').addEventListener('click', () => {
@@ -2800,9 +2898,12 @@ function syncObsScene(immediate = false, forceBgSync = false) {
             timelineData: timelineData,
             currentStepIndex: currentStepIndex,
             myTeamSide: myTeamSide,
+            bluePreset: bluePreset,
+            redPreset: redPreset,
             zoomLevel: zoomLevel,
             champIconSize: champIconSize,
             minionIconSize: minionIconSize,
+            objectIconSize: objectIconSize,
             currentVersion: currentVersion,
             viewport: viewportData,
             currentMode: currentMode,
