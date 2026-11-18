@@ -124,10 +124,19 @@ let draggedObj = null;
 let draggedEl = null;
 let dragType = null;
 let draggedDistance = 0;
+let hasDraggedMoved = false;
+let dragStartClientX = 0;
+let dragStartClientY = 0;
+let dragOrigX = 0;
+let dragOrigY = 0;
+let dragOrigDx = 0;
+let dragOrigDy = 0;
+let dragGrabOffsetX = 0;
+let dragGrabOffsetY = 0;
 
-// Undo/Redo
-let historyStack = [];
-let historyPointer = -1;
+// Undo/Redo: 초기 빈 보드 상태를 즉시 보존하여 첫 동작도 항상 Undo 가능하도록 보장
+let historyStack = [{ data: [ [] ], stepIndex: 0 }];
+let historyPointer = 0;
 
 const mapEl = document.getElementById('rift-map');
 const svgLayer = document.getElementById('svg-layer');
@@ -208,6 +217,22 @@ function applyZoom() {
 
 async function init() {
     try {
+        renderRightSidebar();
+        renderStructures();
+        renderScene();
+        updateUndoRedoButtonsUI();
+
+        // 네트워크/API 응답 대기 중에도 맵 조작과 Undo/Redo가 즉시 작동하도록 먼저 바인딩
+        bindZoomAndPanEvents();
+
+        // 아이콘 크기 설정 로드 및 슬라이더 이벤트 바인딩 (3종 분리 + 배율 비례 스케일)
+        loadIconSizeSettings();
+
+        // 맵 스크롤(패닝)이 발생할 때 실시간 뷰포트 동기화 송신
+        document.getElementById('map-area').addEventListener('scroll', () => {
+            syncObsViewport();
+        });
+
         const verRes = await fetch('https://ddragon.leagueoflegends.com/api/versions.json');
         const versions = await verRes.json();
         currentVersion = versions[0];
@@ -222,25 +247,9 @@ async function init() {
         };
 
         renderLeftSidebar();
-        renderRightSidebar();
-        renderStructures();
-        
-        recordHistory();
-        renderScene();
-        
-        // Zoom & Panning 이벤트 바인딩
-        bindZoomAndPanEvents();
         renderPresets();
         checkAndApplyImportedChampions();
         initWebSocket();
-
-        // 맵 스크롤(패닝)이 발생할 때 실시간 뷰포트 동기화 송신
-        document.getElementById('map-area').addEventListener('scroll', () => {
-            syncObsViewport();
-        });
-
-        // 아이콘 크기 설정 로드 및 슬라이더 이벤트 바인딩 (3종 분리 + 배율 비례 스케일)
-        loadIconSizeSettings();
 
         const sizeSlider = document.getElementById('size-slider');
         if (sizeSlider) {
@@ -432,10 +441,11 @@ function bindZoomAndPanEvents() {
     // 마우스 드래그 패닝(Panning), 화살표 그리기(Drawing) 및 커스텀 드래그
     let isPanning = false;
     let isPanningReady = false;
-    let hasDraggedMoved = false;
     let startX, startY, scrollLeft, scrollTop;
 
     mapEl.addEventListener('mousedown', (e) => {
+        blurActiveTextInput();
+
         // 커스텀 드래그 대상 식별
         const placedObjEl = e.target.closest('.placed-object');
         const arrowCtrlEl = e.target.closest('.arrow-control');
@@ -450,7 +460,18 @@ function bindZoomAndPanEvents() {
                 draggedEl = placedObjEl;
                 draggedObj = placedObjEl._dataObj;
                 dragType = 'object';
+
+                const mapRect = mapEl.getBoundingClientRect();
+                const borderOffset = 2 * zoomLevel;
+                const downMapX = (e.clientX - mapRect.left - borderOffset) / zoomLevel;
+                const downMapY = (e.clientY - mapRect.top - borderOffset) / zoomLevel;
+                dragStartClientX = e.clientX;
+                dragStartClientY = e.clientY;
                 hasDraggedMoved = false;
+                dragOrigX = draggedObj.x;
+                dragOrigY = draggedObj.y;
+                dragGrabOffsetX = downMapX - draggedObj.x;
+                dragGrabOffsetY = downMapY - draggedObj.y;
                 
                 selectedObjUid = draggedObj.uid;
                 draggedEl.classList.add('selected');
@@ -471,7 +492,25 @@ function bindZoomAndPanEvents() {
                 draggedEl = arrowCtrlEl;
                 draggedObj = arrowCtrlEl._dataObj;
                 dragType = arrowCtrlEl.classList.contains('start') ? 'arrow-start' : 'arrow-end';
+
+                const mapRect = mapEl.getBoundingClientRect();
+                const borderOffset = 2 * zoomLevel;
+                const downMapX = (e.clientX - mapRect.left - borderOffset) / zoomLevel;
+                const downMapY = (e.clientY - mapRect.top - borderOffset) / zoomLevel;
+                dragStartClientX = e.clientX;
+                dragStartClientY = e.clientY;
                 hasDraggedMoved = false;
+                if (dragType === 'arrow-end') {
+                    dragOrigDx = draggedObj.arrow.dx;
+                    dragOrigDy = draggedObj.arrow.dy;
+                    dragGrabOffsetX = downMapX - (draggedObj.x + draggedObj.arrow.dx);
+                    dragGrabOffsetY = downMapY - (draggedObj.y + draggedObj.arrow.dy);
+                } else {
+                    dragOrigX = draggedObj.x;
+                    dragOrigY = draggedObj.y;
+                    dragGrabOffsetX = downMapX - draggedObj.x;
+                    dragGrabOffsetY = downMapY - draggedObj.y;
+                }
                 
                 selectedObjUid = draggedObj.uid;
                 draggedEl.classList.add('selected');
@@ -593,16 +632,16 @@ function bindZoomAndPanEvents() {
         // 1. 커스텀 드래그가 활성화된 경우 (마우스 왼쪽 클릭 드래그)
         if (draggedObj && draggedEl && dragType) {
             e.preventDefault();
-            const mapRect = mapEl.getBoundingClientRect();
-            const borderOffset = 2 * zoomLevel;
-            const cx = Math.min(MAP_BASE_WIDTH, Math.max(0, (e.clientX - mapRect.left - borderOffset) / zoomLevel));
-            const cy = Math.min(MAP_BASE_HEIGHT, Math.max(0, (e.clientY - mapRect.top - borderOffset) / zoomLevel));
-
-            const baseX = dragType === 'arrow-end' ? (draggedObj.x + draggedObj.arrow.dx) : draggedObj.x;
-            const baseY = dragType === 'arrow-end' ? (draggedObj.y + draggedObj.arrow.dy) : draggedObj.y;
-            if (Math.abs(cx - baseX) > 0.5 || Math.abs(cy - baseY) > 0.5) {
+            if (!hasDraggedMoved) {
+                if (Math.hypot(e.clientX - dragStartClientX, e.clientY - dragStartClientY) < 3) {
+                    return;
+                }
                 hasDraggedMoved = true;
             }
+            const mapRect = mapEl.getBoundingClientRect();
+            const borderOffset = 2 * zoomLevel;
+            const cx = Math.min(MAP_BASE_WIDTH, Math.max(0, (e.clientX - mapRect.left - borderOffset) / zoomLevel - dragGrabOffsetX));
+            const cy = Math.min(MAP_BASE_HEIGHT, Math.max(0, (e.clientY - mapRect.top - borderOffset) / zoomLevel - dragGrabOffsetY));
             
             if (dragType === 'object') {
                 draggedObj.x = cx;
@@ -715,15 +754,21 @@ function bindZoomAndPanEvents() {
             if (end) end.style.transition = '';
             const line = svgLayer.querySelector(`line[data-uid="${draggedObj.uid}"]`);
             if (line) line.style.transition = '';
+
+            const didChange = hasDraggedMoved && (
+                dragType === 'arrow-end'
+                    ? (draggedObj.arrow.dx !== dragOrigDx || draggedObj.arrow.dy !== dragOrigDy)
+                    : (draggedObj.x !== dragOrigX || draggedObj.y !== dragOrigY)
+            );
             
             draggedObj = null;
             draggedEl = null;
             dragType = null;
+            hasDraggedMoved = false;
             
             renderScene();
-            if (hasDraggedMoved) {
+            if (didChange) {
                 recordHistory();
-                hasDraggedMoved = false;
             }
             return;
         }
@@ -792,7 +837,7 @@ function bindZoomAndPanEvents() {
         }
 
         // 5. 지우개 문지르기가 끝나는 경우
-        if (isDrawing && activeTool === 'eraser') {
+        if (isDrawing && (activeTool === 'eraser' || erasedSomething)) {
             isDrawing = false;
             if (erasedSomething) {
                 recordHistory();
@@ -821,36 +866,121 @@ function bindZoomAndPanEvents() {
 }
 
 // --- Core Logic ---
+function blurActiveTextInput() {
+    const active = document.activeElement;
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT')) {
+        if (typeof active.blur === 'function') active.blur();
+    }
+}
+
+function cancelActiveInteraction() {
+    if (draggedEl) {
+        draggedEl.classList.remove('dragging');
+        draggedEl.style.transition = '';
+    }
+    if (draggedObj) {
+        const start = document.getElementById(`start_${draggedObj.uid}`);
+        if (start) start.style.transition = '';
+        const end = document.getElementById(`end_${draggedObj.uid}`);
+        if (end) end.style.transition = '';
+        const line = svgLayer.querySelector(`line[data-uid="${draggedObj.uid}"]`);
+        if (line) line.style.transition = '';
+    }
+    draggedObj = null;
+    draggedEl = null;
+    dragType = null;
+    hasDraggedMoved = false;
+
+    const tempUids = [];
+    if (typeof currentDrawingArrow !== 'undefined' && currentDrawingArrow && currentDrawingArrow.uid) {
+        tempUids.push(currentDrawingArrow.uid);
+    }
+    if (typeof currentDrawingStroke !== 'undefined' && currentDrawingStroke && currentDrawingStroke.uid) {
+        tempUids.push(currentDrawingStroke.uid);
+    }
+    if (tempUids.length > 0 && Array.isArray(timelineData)) {
+        timelineData = timelineData.map(step =>
+            Array.isArray(step) ? step.filter(o => o && !tempUids.includes(o.uid)) : []
+        );
+    }
+    if (typeof currentDrawingArrow !== 'undefined') currentDrawingArrow = null;
+    if (typeof currentDrawingStroke !== 'undefined') currentDrawingStroke = null;
+    if (typeof isDrawing !== 'undefined') isDrawing = false;
+    if (typeof erasedSomething !== 'undefined') erasedSomething = false;
+}
+
+function updateUndoRedoButtonsUI() {
+    const canUndo = historyPointer > 0;
+    const canRedo = historyPointer >= 0 && historyPointer < historyStack.length - 1;
+    ['btn-undo', 'mobile-btn-undo'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = !canUndo;
+    });
+    ['btn-redo', 'mobile-btn-redo'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = !canRedo;
+    });
+}
+
 function recordHistory() {
     if (!timelineData[currentStepIndex]) return;
     if (historyPointer < historyStack.length - 1) {
         historyStack = historyStack.slice(0, historyPointer + 1);
     }
-    // Deep Copy: 독립된 상태 저장
+    // 진행 중인 임시 획/화살표는 제외하고 순수 스텝 데이터만 저장
+    const cleanData = timelineData.map(step =>
+        (Array.isArray(step) ? step : []).filter(o => {
+            if (!o) return false;
+            if (typeof currentDrawingArrow !== 'undefined' && currentDrawingArrow && o.uid === currentDrawingArrow.uid) return false;
+            if (typeof currentDrawingStroke !== 'undefined' && currentDrawingStroke && o.uid === currentDrawingStroke.uid) return false;
+            return typeof o.uid !== 'string' || (!o.uid.startsWith('arrow_temp_') && !o.uid.startsWith('stroke_temp_'));
+        })
+    );
+    const clonedData = JSON.parse(JSON.stringify(cleanData));
+    const serializedData = JSON.stringify(clonedData);
+
+    // 직전 스냅샷과 데이터가 완전히 동일하면 중복 기록 생략
+    if (historyPointer >= 0 && historyStack[historyPointer]) {
+        if (JSON.stringify(historyStack[historyPointer].data) === serializedData) {
+            historyStack[historyPointer].stepIndex = currentStepIndex;
+            updateUndoRedoButtonsUI();
+            return;
+        }
+    }
+
     const snapshot = {
-        data: JSON.parse(JSON.stringify(timelineData)),
+        data: clonedData,
         stepIndex: currentStepIndex
     };
     historyStack.push(snapshot);
     historyPointer++;
-    if(historyStack.length > 50) { 
+    if (historyStack.length > 50) {
         historyStack.shift();
         historyPointer--;
     }
+    updateUndoRedoButtonsUI();
 }
 
 function undo() {
-    if (historyPointer > 0) {
-        historyPointer--;
-        restoreState(historyStack[historyPointer]);
+    if (historyPointer <= 0) {
+        updateUndoRedoButtonsUI();
+        showToast('더 이상 실행 취소할 내역이 없습니다.');
+        return;
     }
+    const prevSnap = historyStack[historyPointer];
+    historyPointer--;
+    restoreState(historyStack[historyPointer], prevSnap);
 }
 
 function redo() {
-    if (historyPointer < historyStack.length - 1) {
-        historyPointer++;
-        restoreState(historyStack[historyPointer]);
+    if (historyPointer >= historyStack.length - 1) {
+        updateUndoRedoButtonsUI();
+        showToast('더 이상 다시 실행할 내역이 없습니다.');
+        return;
     }
+    const prevSnap = historyStack[historyPointer];
+    historyPointer++;
+    restoreState(historyStack[historyPointer], prevSnap);
 }
 
 function triggerStepAnimation() {
@@ -861,14 +991,30 @@ function triggerStepAnimation() {
     }, 350);
 }
 
-function restoreState(snapshot) {
-    triggerStepAnimation();
+function restoreState(snapshot, prevSnapshot = null) {
+    cancelActiveInteraction();
+    if (window.animTimer) clearTimeout(window.animTimer);
+    mapEl.classList.remove('animating');
+
     timelineData = JSON.parse(JSON.stringify(snapshot.data));
-    currentStepIndex = Math.max(0, Math.min(snapshot.stepIndex || 0, timelineData.length - 1));
+    let nextStepIdx = Math.max(0, Math.min(snapshot.stepIndex || 0, timelineData.length - 1));
+    if (prevSnapshot && Array.isArray(prevSnapshot.data) && prevSnapshot.data.length === timelineData.length) {
+        const changedIdx = timelineData.findIndex((step, i) =>
+            JSON.stringify(step) !== JSON.stringify(prevSnapshot.data[i])
+        );
+        if (changedIdx !== -1) {
+            nextStepIdx = changedIdx;
+        }
+    }
+    currentStepIndex = nextStepIdx;
+
     if (selectedObjUid && !(timelineData[currentStepIndex] || []).some(o => o.uid === selectedObjUid)) {
         selectedObjUid = null;
     }
+    mapEl.querySelectorAll('.placed-object, .arrow-control').forEach(el => el.remove());
+    svgLayer.querySelectorAll('line, path[data-uid]').forEach(l => l.remove());
     renderScene();
+    updateUndoRedoButtonsUI();
 }
 
 function renderStructures() {
@@ -1048,6 +1194,7 @@ function renderSinglePreset(team, list) {
             window.currentDragData = { dragType: "new-champion", champId: key, team: team };
         });
         img.addEventListener('dragstart', (e) => {
+            blurActiveTextInput();
             e.stopPropagation();
             const dragData = { dragType: "new-champion", champId: key, team: team };
             window.currentDragData = dragData;
@@ -1084,6 +1231,7 @@ function renderLeftSidebar(filter = "") {
                 window.currentDragData = { dragType: "new-champion", champId: key };
             });
             img.addEventListener('dragstart', (e) => {
+                blurActiveTextInput();
                 const dragData = { dragType: "new-champion", champId: key };
                 window.currentDragData = dragData;
                 e.dataTransfer.setData("text/plain", JSON.stringify(dragData));
@@ -1808,6 +1956,7 @@ function renderStrokes() {
 }
 
 function setDrawingTool(tool) {
+    cancelActiveInteraction();
     activeTool = tool;
     document.querySelectorAll('.toolbar-group #tool-select, .toolbar-group #tool-pen, .toolbar-group #tool-arrow, .toolbar-group #tool-eraser').forEach(btn => {
         btn.classList.remove('active');
@@ -1940,6 +2089,7 @@ function renderTimeline() {
         btn.innerHTML = `<span class="step-number">${idx + 1}</span>`;
         btn.onclick = () => { 
             if (currentStepIndex !== idx) {
+                cancelActiveInteraction();
                 triggerStepAnimation();
                 currentStepIndex = idx; 
                 renderScene(); 
@@ -2188,6 +2338,7 @@ function resetAllSteps() {
 
 function prevStep() {
     if (currentStepIndex > 0) {
+        cancelActiveInteraction();
         triggerStepAnimation();
         currentStepIndex--;
         renderScene();
@@ -2196,6 +2347,7 @@ function prevStep() {
 
 function nextStep() {
     if (currentStepIndex < timelineData.length - 1) {
+        cancelActiveInteraction();
         triggerStepAnimation();
         currentStepIndex++;
         renderScene();
@@ -2455,6 +2607,7 @@ function allowDrop(ev) { ev.preventDefault(); }
 
 function drop(ev) {
     ev.preventDefault();
+    blurActiveTextInput();
     const mapRect = mapEl.getBoundingClientRect();
     const borderOffset = 2 * zoomLevel;
     let x = (ev.clientX - mapRect.left - borderOffset) / zoomLevel;
@@ -2784,9 +2937,12 @@ document.addEventListener('keydown', (e) => {
         return;
     }
 
-    // 텍스트 입력 필드(검색창, 닉네임 입력 등)에서만 단축키를 방지 (range 슬라이더 등은 제외)
-    const isTyping = e.target.tagName === 'TEXTAREA' || 
-                     (e.target.tagName === 'INPUT' && (e.target.type === 'text' || e.target.type === 'search' || !e.target.type));
+    // 텍스트 입력 필드(검색창, 닉네임 입력 등)에서만 단축키를 방지 (비어 있는 검색창의 Ctrl+Z/Ctrl+Y는 허용)
+    const isUndoRedoShortcut = (e.ctrlKey || e.metaKey) && (e.code === 'KeyZ' || e.code === 'KeyY');
+    const isEmptySearchInput = e.target && e.target.id === 'search' && e.target.value === '';
+    const isTyping = (e.target.tagName === 'TEXTAREA' || 
+                     (e.target.tagName === 'INPUT' && (e.target.type === 'text' || e.target.type === 'search' || !e.target.type)))
+                     && !(isUndoRedoShortcut && isEmptySearchInput);
     if (isTyping) return;
 
     // Delete / Backspace 키로 오브젝트 삭제
@@ -4181,6 +4337,7 @@ function endTutorial(restoreOriginal = true) {
         historyPointer = saved.historyPointer;
         renderTacticsUI();
         renderScene();
+        updateUndoRedoButtonsUI();
     }
     tutorialSavedBoardState = null;
 
@@ -4199,7 +4356,16 @@ function endTutorial(restoreOriginal = true) {
 }
 
 function keepTutorialDemoAndClose() {
+    const prevHistory = tutorialSavedBoardState && Array.isArray(tutorialSavedBoardState.historyStack)
+        ? JSON.parse(JSON.stringify(tutorialSavedBoardState.historyStack))
+        : null;
+    const prevPointer = tutorialSavedBoardState ? tutorialSavedBoardState.historyPointer : -1;
     endTutorial(false);
+    if (prevHistory && prevHistory.length > 0) {
+        historyStack = prevHistory;
+        historyPointer = Math.max(0, Math.min(prevPointer, historyStack.length - 1));
+    }
+    recordHistory();
     showToast('🧪 튜토리얼 예제를 보드에 남겼습니다. 자유롭게 조작해 보세요!');
 }
 
