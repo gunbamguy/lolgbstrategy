@@ -381,6 +381,10 @@ function applyAutoSize() {
     minionIconSize = Math.max(16, Math.round(baseMinionSize * scaleFactor));
     objectIconSize = Math.max(12, Math.round(baseObjectSize * scaleFactor));
 
+    if (typeof applyIconBorderCssVars === 'function') {
+        applyIconBorderCssVars(mapEl, champIconSize, objectIconSize);
+    }
+
     // UI 인디케이터 업데이트 (슬라이더는 사용자 기준값을 그대로 유지)
     const sizeIndicator = document.getElementById('size-indicator');
     if (sizeIndicator) sizeIndicator.innerText = champIconSize + "px";

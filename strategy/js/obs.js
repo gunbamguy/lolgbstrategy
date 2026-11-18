@@ -329,6 +329,9 @@ function renderScene() {
     if (!timelineData[currentStepIndex]) {
         timelineData[currentStepIndex] = [];
     }
+    if (typeof applyIconBorderCssVars === 'function') {
+        applyIconBorderCssVars(mapEl, champIconSize, objectIconSize);
+    }
     renderObjects();
     renderGhosts();
     renderArrows();

@@ -7,6 +7,9 @@
     --step-active: #0acbe6;
     --map-width: 1203.3px;
     --map-height: 800px;
+    --champ-border-width: 1.6px;
+    --champ-glow-blur: 4px;
+    --icon-border-width: 1.2px;
 }
 
 body {
@@ -501,19 +504,19 @@ svg line.selected {
 
 .placed-champion {
     border-radius: 50%;
-    border: 2.5px solid #ffffff;
-    box-shadow: 0 0 4px rgba(0, 0, 0, 0.9);
+    border: var(--champ-border-width) solid #ffffff;
+    box-shadow: 0 0 3px rgba(0, 0, 0, 0.85);
     z-index: 110;
     background-color: #000;
     box-sizing: border-box;
 }
 .placed-champion.team-blue {
-    border: 3px solid #00b0ff;
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.85), 0 0 9px rgba(0, 176, 255, 0.9);
+    border: var(--champ-border-width) solid #00b0ff;
+    box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.85), 0 0 var(--champ-glow-blur) rgba(0, 176, 255, 0.72);
 }
 .placed-champion.team-red {
-    border: 3px solid #ff3d3d;
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.85), 0 0 9px rgba(255, 61, 61, 0.9);
+    border: var(--champ-border-width) solid #ff3d3d;
+    box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.85), 0 0 var(--champ-glow-blur) rgba(255, 61, 61, 0.72);
 }
 .ghost-champion {
     opacity: 0.35 !important;
@@ -527,8 +530,8 @@ svg line.selected {
 }
 .placed-icon { 
     width: 32px; height: 32px; z-index: 105; 
-    border-radius: 50%; border: 1.5px solid #fff; background-color: #000;
-    box-shadow: 0 0 5px rgba(0,0,0,0.5);
+    border-radius: 50%; border: var(--icon-border-width) solid #fff; background-color: #000;
+    box-shadow: 0 0 4px rgba(0,0,0,0.5);
     box-sizing: border-box;
 }
 .placed-minion {
@@ -568,18 +571,18 @@ svg line.selected {
 .placed-champion.selected,
 .placed-icon.selected {
     border-color: var(--accent-color) !important;
-    box-shadow: 0 0 8px rgba(208, 184, 108, 0.8) !important;
+    box-shadow: 0 0 6px rgba(208, 184, 108, 0.8) !important;
 }
 .placed-champion.team-blue.selected {
     border-color: #00b0ff !important;
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.85), 0 0 10px rgba(0, 176, 255, 0.95) !important;
-    outline: 2px solid var(--accent-color);
+    box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.85), 0 0 6px rgba(0, 176, 255, 0.85) !important;
+    outline: 1.5px solid var(--accent-color);
     outline-offset: 1px;
 }
 .placed-champion.team-red.selected {
     border-color: #ff3d3d !important;
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.85), 0 0 10px rgba(255, 61, 61, 0.95) !important;
-    outline: 2px solid var(--accent-color);
+    box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.85), 0 0 6px rgba(255, 61, 61, 0.85) !important;
+    outline: 1.5px solid var(--accent-color);
     outline-offset: 1px;
 }
 

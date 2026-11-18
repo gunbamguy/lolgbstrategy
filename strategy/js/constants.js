@@ -74,3 +74,16 @@ const objectsData = [
     { id: 'oracle-lens', name: '예언자의 렌즈 (빨강)', src: 'https://raw.communitydragon.org/latest/game/assets/items/icons2d/3364_class_t1_oracleslens.png' },
     { id: 'teleport', name: '텔레포트', src: 'https://raw.communitydragon.org/latest/game/assets/items/icons2d/teleporthome.png' }
 ];
+
+/**
+ * 아이콘 크기에 비례해 챔피언/오브젝트 테두리 및 발광 CSS 변수를 동기화한다.
+ */
+function applyIconBorderCssVars(targetEl, champSize, objSize) {
+    if (!targetEl || !targetEl.style || typeof targetEl.style.setProperty !== 'function') return;
+    const borderWidth = Math.max(1, Math.min(2.2, Number((champSize * 0.04).toFixed(2))));
+    const glowBlur = Math.max(2, Math.round(champSize * 0.1));
+    const iconBorder = Math.max(0.8, Math.min(1.6, Number((objSize * 0.038).toFixed(2))));
+    targetEl.style.setProperty('--champ-border-width', `${borderWidth}px`);
+    targetEl.style.setProperty('--champ-glow-blur', `${glowBlur}px`);
+    targetEl.style.setProperty('--icon-border-width', `${iconBorder}px`);
+}
