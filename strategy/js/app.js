@@ -1256,7 +1256,7 @@ function getSavedTacticsFromStorage() {
     const data = localStorage.getItem(TACTICS_STORAGE_KEY);
     if (!data) return [];
     try {
-        const parsed = JSON.parse(data);
+        const parsed = safeJsonParse(data);
         return Array.isArray(parsed) ? parsed : [];
     } catch (e) {
         return [];
@@ -1287,26 +1287,25 @@ function createCurrentBoardSnapshot() {
 }
 
 function applyBoardSnapshot(tactic, shouldRecordHistory = true) {
+    const safeTactic = sanitizeImportBoard(tactic) || createEmptyBoardSnapshot();
     triggerStepAnimation();
     mapEl.querySelectorAll('.placed-object, .arrow-control').forEach(el => el.remove());
     svgLayer.querySelectorAll('line, path[data-uid]').forEach(l => l.remove());
 
-    timelineData = JSON.parse(JSON.stringify(
-        Array.isArray(tactic.timelineData) && tactic.timelineData.length > 0 ? tactic.timelineData : [ [] ]
-    ));
-    currentStepIndex = Math.max(0, Math.min(tactic.currentStepIndex || 0, timelineData.length - 1));
-    bluePreset = JSON.parse(JSON.stringify(tactic.bluePreset || []));
-    redPreset = JSON.parse(JSON.stringify(tactic.redPreset || []));
+    timelineData = safeTactic.timelineData;
+    currentStepIndex = safeTactic.currentStepIndex;
+    bluePreset = safeTactic.bluePreset;
+    redPreset = safeTactic.redPreset;
     selectedObjUid = null;
 
-    showGhostChampions = typeof tactic.showGhostChampions === 'boolean' ? tactic.showGhostChampions : true;
+    showGhostChampions = safeTactic.showGhostChampions;
     const ghostCb = document.getElementById('show-ghost-checkbox');
     if (ghostCb) ghostCb.checked = showGhostChampions;
 
     renderPresets();
-    setMyTeamSide(tactic.myTeamSide || 'blue');
-    selectedScreenshotId = tactic.selectedScreenshotId !== undefined ? tactic.selectedScreenshotId : null;
-    setAppMode(tactic.currentMode || 'map');
+    setMyTeamSide(safeTactic.myTeamSide);
+    selectedScreenshotId = safeTactic.selectedScreenshotId;
+    setAppMode(safeTactic.currentMode);
 
     renderScene();
     if (shouldRecordHistory) {
@@ -1537,7 +1536,7 @@ function getSavedPresetsFromStorage() {
     const data = localStorage.getItem('lol_strategy_user_presets');
     if (data) {
         try {
-            const parsed = JSON.parse(data);
+            const parsed = safeJsonParse(data);
             return Array.isArray(parsed) ? parsed : [];
         } catch(e) {
             return [];
@@ -1910,14 +1909,16 @@ function eraseAt(cx, cy) {
                 selectedObjUid = null;
             }
             
-            const el = document.getElementById(obj.uid);
+            const el = getPlacedObjectEl(obj.uid);
             if (el) el.remove();
-            const startEl = document.getElementById(`start_${obj.uid}`);
-            if (startEl) startEl.remove();
-            const endEl = document.getElementById(`end_${obj.uid}`);
-            if (endEl) endEl.remove();
-            const pathEl = svgLayer.querySelector(`path[data-uid="${obj.uid}"]`);
-            if (pathEl) pathEl.remove();
+            if (typeof obj.uid === 'string' && SAFE_OBJ_UID_RE.test(obj.uid)) {
+                const startEl = document.getElementById(`start_${obj.uid}`);
+                if (startEl && startEl.parentElement === mapEl) startEl.remove();
+                const endEl = document.getElementById(`end_${obj.uid}`);
+                if (endEl && endEl.parentElement === mapEl) endEl.remove();
+                const pathEl = svgLayer.querySelector(`path[data-uid="${obj.uid}"]`);
+                if (pathEl) pathEl.remove();
+            }
         } else {
             nextObjs.push(obj);
         }
@@ -1946,24 +1947,74 @@ function renderTimeline() {
         };
         container.appendChild(btn);
     });
-    const activeBtn = container.children[currentStepIndex];
-    if(activeBtn) activeBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+
+    const actionsGroup = document.createElement('div');
+    actionsGroup.className = 'step-prev-actions';
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'step-prev-label';
+    labelEl.innerText = '이전스텝 :';
+
+    const pullChampsBtn = document.createElement('button');
+    pullChampsBtn.type = 'button';
+    pullChampsBtn.id = 'btn-pull-prev-champs';
+    pullChampsBtn.className = 'step-action-btn';
+    pullChampsBtn.innerText = '챔프';
+    pullChampsBtn.title = '이전 스텝에 배치된 챔피언들을 현재 스텝으로 불러와 이어서 배치합니다';
+    pullChampsBtn.disabled = currentStepIndex <= 0;
+    pullChampsBtn.onclick = pullPrevStepChampions;
+
+    const pullStateBtn = document.createElement('button');
+    pullStateBtn.type = 'button';
+    pullStateBtn.id = 'btn-pull-prev-state';
+    pullStateBtn.className = 'step-action-btn state';
+    pullStateBtn.innerText = '전체';
+    pullStateBtn.title = '이전 스텝의 전체 배치 상태(선 지우지 않기 옵션 반영)를 현재 스텝으로 가져옵니다';
+    pullStateBtn.disabled = currentStepIndex <= 0;
+    pullStateBtn.onclick = pullPrevStepState;
+
+    actionsGroup.appendChild(labelEl);
+    actionsGroup.appendChild(pullChampsBtn);
+    actionsGroup.appendChild(pullStateBtn);
+    container.appendChild(actionsGroup);
+
+    const stepBtns = container.querySelectorAll('.step-btn');
+    const activeBtn = stepBtns[currentStepIndex];
+    if (activeBtn) activeBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+}
+
+function cloneStepObjects(objs, keepLines) {
+    let cloned = JSON.parse(JSON.stringify(objs || []));
+    if (!keepLines) {
+        cloned = cloned.filter(o => o.type !== 'pen_stroke' && o.type !== 'free_arrow');
+        cloned.forEach(o => {
+            if (o.arrow) {
+                o.arrow = { hasArrow: false, dx: 0, dy: 0 };
+            }
+        });
+    }
+    return cloned;
+}
+
+function commitStepReplacement(nextObjs, toastMessage) {
+    timelineData[currentStepIndex] = nextObjs;
+    if (selectedObjUid && !nextObjs.some(o => o.uid === selectedObjUid)) {
+        selectedObjUid = null;
+    }
+    mapEl.querySelectorAll('.placed-object, .arrow-control').forEach(el => el.remove());
+    svgLayer.querySelectorAll('line, path[data-uid]').forEach(l => l.remove());
+    renderScene();
+    recordHistory();
+    if (toastMessage) {
+        showToast(toastMessage);
+    }
 }
 
 function addNewStep() {
     triggerStepAnimation();
     const keepLinesEl = document.getElementById('keep-lines-checkbox');
     const keepLines = keepLinesEl ? keepLinesEl.checked : false;
-    let nextStepData = JSON.parse(JSON.stringify(timelineData[currentStepIndex] || []));
-
-    if (!keepLines) {
-        nextStepData = nextStepData.filter(o => o.type !== 'pen_stroke' && o.type !== 'free_arrow');
-        nextStepData.forEach(o => {
-            if (o.arrow) {
-                o.arrow = { hasArrow: false, dx: 0, dy: 0 };
-            }
-        });
-    }
+    const nextStepData = cloneStepObjects(timelineData[currentStepIndex] || [], keepLines);
 
     timelineData.splice(currentStepIndex + 1, 0, nextStepData);
     currentStepIndex++;
@@ -1972,6 +2023,62 @@ function addNewStep() {
     }
     renderScene();
     recordHistory();
+}
+
+function confirmStepOverwrite(targetDesc) {
+    const currentObjs = timelineData[currentStepIndex] || [];
+    if (currentObjs.length === 0) return true;
+    return confirm(`⚠️ 현재 Step ${currentStepIndex + 1}에 이미 배치된 요소가 있습니다.\n이전 스텝(Step ${currentStepIndex})의 ${targetDesc} 덮어쓰시겠습니까?`);
+}
+
+function pullPrevStepChampions() {
+    if (currentStepIndex <= 0) {
+        showToast('⚠️ Step 1입니다. Step 2 이상에서 이전 스텝의 챔피언을 불러올 수 있습니다.');
+        return;
+    }
+    const prevObjs = timelineData[currentStepIndex - 1] || [];
+    const prevChamps = prevObjs.filter(o => o && o.type === 'champion');
+    if (prevChamps.length === 0) {
+        showToast(`⚠️ 이전 스텝(Step ${currentStepIndex})에 배치된 챔피언이 없습니다.`);
+        return;
+    }
+    if (!confirmStepOverwrite('챔피언 배치로')) {
+        return;
+    }
+
+    const keepLinesEl = document.getElementById('keep-lines-checkbox');
+    const keepLines = keepLinesEl ? keepLinesEl.checked : false;
+    const clonedChamps = cloneStepObjects(prevChamps, keepLines);
+    const nonChamps = (timelineData[currentStepIndex] || []).filter(o => o && o.type !== 'champion');
+
+    commitStepReplacement(
+        [...nonChamps, ...clonedChamps],
+        `👥 Step ${currentStepIndex}의 챔피언 ${clonedChamps.length}명을 현재 스텝으로 불러왔습니다.`
+    );
+}
+
+function pullPrevStepState() {
+    if (currentStepIndex <= 0) {
+        showToast('⚠️ Step 1입니다. Step 2 이상에서 이전 스텝의 상태를 가져올 수 있습니다.');
+        return;
+    }
+    const prevObjs = timelineData[currentStepIndex - 1] || [];
+    if (prevObjs.length === 0) {
+        showToast(`⚠️ 이전 스텝(Step ${currentStepIndex})이 비어 있습니다.`);
+        return;
+    }
+    if (!confirmStepOverwrite('전체 상태로')) {
+        return;
+    }
+
+    const keepLinesEl = document.getElementById('keep-lines-checkbox');
+    const keepLines = keepLinesEl ? keepLinesEl.checked : false;
+    const clonedObjs = cloneStepObjects(prevObjs, keepLines);
+
+    commitStepReplacement(
+        clonedObjs,
+        `📥 Step ${currentStepIndex}의 상태를 현재 스텝으로 가져왔습니다.`
+    );
 }
 
 function toggleGhostView(enabled) {
@@ -2030,16 +2137,18 @@ function deleteObject(uid) {
     if (selectedObjUid === uid) {
         selectedObjUid = null;
     }
-    const el = document.getElementById(uid);
+    const el = getPlacedObjectEl(uid);
     if (el) el.remove();
-    const startEl = document.getElementById(`start_${uid}`);
-    if (startEl) startEl.remove();
-    const endEl = document.getElementById(`end_${uid}`);
-    if (endEl) endEl.remove();
-    
-    // Delete path element if it is a stroke
-    const pathEl = svgLayer.querySelector(`path[data-uid="${uid}"]`);
-    if (pathEl) pathEl.remove();
+    if (typeof uid === 'string' && SAFE_OBJ_UID_RE.test(uid)) {
+        const startEl = document.getElementById(`start_${uid}`);
+        if (startEl && startEl.parentElement === mapEl) startEl.remove();
+        const endEl = document.getElementById(`end_${uid}`);
+        if (endEl && endEl.parentElement === mapEl) endEl.remove();
+        
+        // Delete path element if it is a stroke
+        const pathEl = svgLayer.querySelector(`path[data-uid="${uid}"]`);
+        if (pathEl) pathEl.remove();
+    }
 
     renderScene();
     recordHistory();
@@ -2056,12 +2165,25 @@ function clearSelection() {
 }
 
 function resetCurrentStep() {
-    timelineData[currentStepIndex] = []; 
+    timelineData[currentStepIndex] = [];
+    selectedObjUid = null;
     // 잔여 DOM 강제 정리로 초기화 오작동 원천 차단
     mapEl.querySelectorAll('.placed-object, .arrow-control').forEach(el => el.remove());
     svgLayer.querySelectorAll('line, path[data-uid]').forEach(l => l.remove());
-    renderScene(); 
+    renderScene();
     recordHistory();
+}
+
+function resetAllSteps() {
+    timelineData = [ [] ];
+    currentStepIndex = 0;
+    selectedObjUid = null;
+    // 잔여 DOM 강제 정리로 초기화 오작동 원천 차단
+    mapEl.querySelectorAll('.placed-object, .arrow-control').forEach(el => el.remove());
+    svgLayer.querySelectorAll('line, path[data-uid]').forEach(l => l.remove());
+    renderScene();
+    recordHistory();
+    showToast('🔄 전체 스텝과 보드 배치가 초기화되었습니다.');
 }
 
 function prevStep() {
@@ -2151,9 +2273,10 @@ function renderGhosts() {
         const teamClass = effectiveTeam ? `team-${effectiveTeam}` : '';
         ghostEl.className = `placed-object placed-champion ghost-champion ${teamClass}`.trim();
         ghostEl.setAttribute('data-ghost-uid', obj.uid);
-        if (obj.champId && obj.champId !== "Poro") {
-            const imgUrl = obj.champId === "Locke" ? "images/Locke.png" : `https://ddragon.leagueoflegends.com/cdn/${currentVersion}/img/champion/${obj.champId}.png`;
-            ghostEl.style.backgroundImage = `url(${imgUrl})`;
+        if (obj.champId && obj.champId !== "Poro" && SAFE_CHAMP_ID_RE.test(obj.champId)) {
+            const safeVer = SAFE_VERSION_RE.test(currentVersion) ? currentVersion : '14.24.1';
+            const imgUrl = obj.champId === "Locke" ? "images/Locke.png" : `https://ddragon.leagueoflegends.com/cdn/${safeVer}/img/champion/${obj.champId}.png`;
+            ghostEl.style.backgroundImage = `url("${imgUrl}")`;
             ghostEl.style.backgroundSize = 'cover';
         } else {
             ghostEl.style.backgroundColor = '#ccc';
@@ -2167,14 +2290,17 @@ function renderGhosts() {
 }
 
 function renderDOM(obj, className) {
-    let el = document.getElementById(obj.uid);
+    if (!obj || typeof obj.uid !== 'string' || !SAFE_OBJ_UID_RE.test(obj.uid)) return;
+    let el = getPlacedObjectEl(obj.uid);
+    const safeVer = SAFE_VERSION_RE.test(currentVersion) ? currentVersion : '14.24.1';
+    const safeChampId = (typeof obj.champId === 'string' && SAFE_CHAMP_ID_RE.test(obj.champId)) ? obj.champId : 'Poro';
     const desiredSrc = obj.type === 'champion'
-        ? (obj.champId && obj.champId !== "Poro"
-            ? (obj.champId === "Locke"
+        ? (safeChampId !== "Poro"
+            ? (safeChampId === "Locke"
                 ? "images/Locke.png"
-                : `https://ddragon.leagueoflegends.com/cdn/${currentVersion || '14.24.1'}/img/champion/${obj.champId}.png`)
+                : `https://ddragon.leagueoflegends.com/cdn/${safeVer}/img/champion/${safeChampId}.png`)
             : "__poro__")
-        : (obj.src || "");
+        : sanitizeImportSrc(obj.src || "");
 
     if (!el) {
         // DOM 생성
@@ -2220,7 +2346,7 @@ function renderDOM(obj, className) {
         el.dataset.renderSrc = desiredSrc;
         if (obj.type === 'champion') {
             if (desiredSrc !== "__poro__") {
-                el.style.backgroundImage = `url(${desiredSrc})`;
+                el.style.backgroundImage = `url("${desiredSrc}")`;
                 el.style.backgroundSize = 'cover';
                 el.style.backgroundColor = '#000';
             } else {
@@ -2341,8 +2467,11 @@ function drop(ev) {
     if (!dragData) {
         const rawData = ev.dataTransfer.getData("text/plain");
         try {
-            if (rawData) {
-                dragData = JSON.parse(rawData);
+            if (rawData && rawData.length <= 4096) {
+                const parsedDrag = safeJsonParse(rawData);
+                if (parsedDrag && typeof parsedDrag === 'object') {
+                    dragData = parsedDrag;
+                }
             }
         } catch (e) {
             console.warn("Failed to parse drag data as JSON, falling back to legacy keys.", e);
@@ -2359,56 +2488,65 @@ function drop(ev) {
     let modified = false;
 
     if (dragType === "new-champion") {
-        const inferredTeam = team || (bluePreset.includes(champId) ? 'blue' : (redPreset.includes(champId) ? 'red' : undefined));
-        timelineData[currentStepIndex].push({
-            type: 'champion',
-            uid: "champ_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5),
-            champId: champId,
-            team: inferredTeam,
-            x: x, y: y,
-            arrow: { hasArrow: false, dx: 0, dy: 0 }
-        });
-        modified = true;
+        if (typeof champId === 'string' && SAFE_CHAMP_ID_RE.test(champId)) {
+            const safeTeam = (team === 'blue' || team === 'red' || team === 'none') ? team : undefined;
+            const inferredTeam = safeTeam || (bluePreset.includes(champId) ? 'blue' : (redPreset.includes(champId) ? 'red' : undefined));
+            timelineData[currentStepIndex].push({
+                type: 'champion',
+                uid: "champ_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5),
+                champId: champId,
+                team: inferredTeam,
+                x: x, y: y,
+                arrow: { hasArrow: false, dx: 0, dy: 0 }
+            });
+            modified = true;
+        }
     } else if (dragType === "new-ping" || dragType === "new-ward" || dragType === "new-object") {
-        let type = "ward";
-        if (dragType === "new-ping") type = "ping";
-        else if (dragType === "new-object") {
-            if (champId && champId.startsWith("minion")) {
-                type = "minion";
-            } else if (iconSrc && (iconSrc.includes("Minion_Melee_Render") || iconSrc.includes("minion"))) {
-                type = "minion";
-            } else {
-                type = "object";
+        const safeSrc = sanitizeImportSrc(iconSrc);
+        if (safeSrc) {
+            let type = "ward";
+            if (dragType === "new-ping") type = "ping";
+            else if (dragType === "new-object") {
+                if (typeof champId === 'string' && champId.startsWith("minion")) {
+                    type = "minion";
+                } else if (safeSrc.includes("Minion_Melee_Render") || safeSrc.includes("minion")) {
+                    type = "minion";
+                } else {
+                    type = "object";
+                }
             }
+            
+            // 미니언 진영 구분
+            let minionType = undefined;
+            if (type === "minion") {
+                if (champId === "minion-red" || champId === "minion-blue") minionType = champId;
+                else if (safeSrc.includes("Chaos_Minion")) minionType = "minion-red";
+                else minionType = "minion-blue";
+            }
+            
+            timelineData[currentStepIndex].push({
+                type: type,
+                uid: type + "_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5),
+                src: safeSrc,
+                x: x, y: y,
+                minionType: minionType,
+                arrow: { hasArrow: false, dx: 0, dy: 0 }
+            });
+            modified = true;
         }
-        
-        // 미니언 진영 구분
-        let minionType = undefined;
-        if (type === "minion") {
-            if (champId && champId.startsWith("minion")) minionType = champId;
-            else if (iconSrc && iconSrc.includes("Chaos_Minion")) minionType = "minion-red";
-            else minionType = "minion-blue";
-        }
-        
-        timelineData[currentStepIndex].push({
-            type: type,
-            uid: type + "_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5),
-            src: iconSrc,
-            x: x, y: y,
-            minionType: minionType,
-            arrow: { hasArrow: false, dx: 0, dy: 0 }
-        });
-        modified = true;
 
     } else if (dragType === "preset-team") {
-        const list = team === 'blue' ? bluePreset : redPreset;
+        const safeTeam = team === 'red' ? 'red' : (team === 'blue' ? 'blue' : null);
+        const list = safeTeam ? (safeTeam === 'blue' ? bluePreset : redPreset) : [];
         
         if (list.length === 0) {
-            showToast("⚠️ 프리셋에 등록된 챔피언이 없습니다.");
+            window.currentDragData = null;
+            if (safeTeam) showToast("⚠️ 프리셋에 등록된 챔피언이 없습니다.");
             return;
         }
         
         list.forEach((champKey, idx) => {
+            if (typeof champKey !== 'string' || !SAFE_CHAMP_ID_RE.test(champKey)) return;
             const offsetX = (idx - (list.length - 1) / 2) * 50;
             const targetX = Math.max(0, Math.min(MAP_BASE_WIDTH, x + offsetX));
             const targetY = y;
@@ -2417,19 +2555,19 @@ function drop(ev) {
             const currentObjs = timelineData[currentStepIndex];
             const existing = currentObjs.find(o =>
                 o.uid === champUid ||
-                (o.type === 'champion' && o.champId === champKey && resolveChampionTeam(o) === team)
+                (o.type === 'champion' && o.champId === champKey && resolveChampionTeam(o) === safeTeam)
             );
             
             if (existing) {
                 existing.x = targetX;
                 existing.y = targetY;
-                existing.team = team;
+                existing.team = safeTeam;
             } else {
                 currentObjs.push({
                     type: 'champion',
                     uid: champUid,
                     champId: champKey,
-                    team: team,
+                    team: safeTeam,
                     x: targetX, y: targetY,
                     arrow: { hasArrow: false, dx: 0, dy: 0 }
                 });
@@ -2814,7 +2952,9 @@ function loadCampPositionsFromStorage() {
     const data = localStorage.getItem('lol_strategy_jungle_camps');
     if (data) {
         try {
-            return JSON.parse(data);
+            const parsed = safeJsonParse(data);
+            const cleaned = sanitizeImportCustomCamps(parsed);
+            if (cleaned && cleaned.length > 0) return cleaned;
         } catch(e) {
             console.error("Failed to load jungle camps from storage", e);
         }
@@ -3070,7 +3210,15 @@ function getScreenshotsFromStorage() {
     const data = localStorage.getItem('lol_strategy_screenshots');
     if (data) {
         try {
-            screenshotsCache = JSON.parse(data);
+            const parsed = safeJsonParse(data);
+            screenshotsCache = (Array.isArray(parsed) ? parsed : [])
+                .filter(s => s && typeof s === 'object' && typeof s.id === 'string' && SAFE_UID_RE.test(s.id))
+                .map(s => ({
+                    id: s.id,
+                    name: sanitizeImportText(s.name, 60) || '스크린샷',
+                    dataUrl: sanitizeDataImageUrl(s.dataUrl)
+                }))
+                .filter(s => s.dataUrl);
             return screenshotsCache;
         } catch(e) {
             screenshotsCache = [];
@@ -3149,10 +3297,11 @@ function setAppMode(mode) {
         const list = getScreenshotsFromStorage();
         // 선택된 스크린샷이 유효한지 확인하고 적용
         const activeScr = list.find(s => s.id === selectedScreenshotId);
+        const activeScrUrl = activeScr ? sanitizeDataImageUrl(activeScr.dataUrl) : '';
         
-        if (activeScr && mapEl) {
+        if (activeScrUrl && mapEl) {
             if (placeholder) placeholder.style.display = 'none';
-            mapEl.style.backgroundImage = `url(${activeScr.dataUrl})`;
+            mapEl.style.backgroundImage = `url("${activeScrUrl}")`;
             mapEl.style.backgroundColor = '#0f0f0f';
         } else {
             // 선택된 스크린샷이 없거나 비어있는 경우
@@ -3196,11 +3345,16 @@ function handleScreenshotPaste(e) {
 }
 
 function addScreenshot(dataUrl) {
+    const safeUrl = sanitizeDataImageUrl(dataUrl);
+    if (!safeUrl) {
+        showToast('⚠️ 지원하지 않거나 올바르지 않은 이미지 형식입니다.');
+        return;
+    }
     const list = getScreenshotsFromStorage();
     const newScr = {
         id: "scr_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5),
         name: "스크린샷 " + (list.length + 1),
-        dataUrl: dataUrl
+        dataUrl: safeUrl
     };
     
     list.push(newScr);
@@ -3361,12 +3515,16 @@ function checkAndApplyImportedChampions() {
     try {
         const saved = localStorage.getItem('gudo_imported_champions');
         if (!saved) return;
-        const imported = JSON.parse(saved);
-        const teamChamps = imported.teamChamps || [];
+        const imported = safeJsonParse(saved);
+        const teamChamps = (imported && Array.isArray(imported.teamChamps)) ? imported.teamChamps : [];
 
         if (teamChamps.length > 0) {
-            bluePreset = teamChamps.slice(0, 5).map(resolveChampionKey).filter(Boolean);
-            redPreset = teamChamps.slice(5, 10).map(resolveChampionKey).filter(Boolean);
+            const safeChampKey = (item) => {
+                const key = resolveChampionKey(item);
+                return (key && SAFE_CHAMP_ID_RE.test(key)) ? key : null;
+            };
+            bluePreset = teamChamps.slice(0, 5).map(safeChampKey).filter(Boolean);
+            redPreset = teamChamps.slice(5, 10).map(safeChampKey).filter(Boolean);
 
             if (typeof renderPresetLists === 'function') {
                 renderPresetLists();
@@ -3939,6 +4097,7 @@ const TUTORIAL_STEPS = [
         category: '타임라인 & 송출',
         title: '🎬 타임라인 스텝(Step) 애니메이션 & OBS 송출',
         target: '#timeline',
+        brightScreen: true,
         onEnter: () => {
             if (typeof switchRightTab === 'function') switchRightTab('obs');
         },
@@ -4001,6 +4160,10 @@ function endTutorial(restoreOriginal = true) {
     if (!isTutorialActive && (!overlay || !overlay.classList.contains('active'))) return;
 
     isTutorialActive = false;
+    const spotlight = document.getElementById('tutorial-spotlight');
+    if (spotlight) {
+        spotlight.classList.remove('bright-screen');
+    }
     if (overlay) {
         overlay.classList.remove('active');
         overlay.setAttribute('aria-hidden', 'true');
@@ -4145,6 +4308,7 @@ function positionTutorialElements() {
     if (!spotlight || !card) return;
 
     const step = TUTORIAL_STEPS[currentTutorialStepIdx];
+    spotlight.classList.toggle('bright-screen', Boolean(step && step.brightScreen));
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const margin = 16;
@@ -4612,17 +4776,17 @@ async function decompressFromGudoString(inputStr) {
             jsonText += decoder.decode(value, { stream: true });
         }
         jsonText += decoder.decode();
-        return JSON.parse(jsonText);
+        return safeJsonParse(jsonText);
     }
 
     if (trimmed.startsWith('GUDO0:')) {
         const bytes = base64UrlToUint8(trimmed.slice(6));
         const jsonText = new TextDecoder().decode(bytes);
-        return JSON.parse(jsonText);
+        return safeJsonParse(jsonText);
     }
 
     if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-        return JSON.parse(trimmed);
+        return safeJsonParse(trimmed);
     }
 
     throw new Error('올바른 GUDO 압축 코드(GUDO1:...) 또는 JSON 형식이 아닙니다.');
@@ -4702,13 +4866,50 @@ async function buildCompressedExport(scope) {
     };
 }
 
-// 🛡️ 불러온 데이터 정화(Sanitize): 허용된 필드·형식만 재구성하여 선택자/CSS/URL/프로토타입 인젝션 차단
+// 🛡️ 불러온 데이터 정화(Sanitize): 허용된 필드·형식만 재구성하여 선택자/CSS/URL/프로토타입/DOM ID 인젝션 차단
 const SAFE_IMPORT_IMG_HOSTS = ['ddragon.leagueoflegends.com', 'raw.communitydragon.org'];
 const SAFE_IMPORT_TYPES = ['champion', 'minion', 'ward', 'ping', 'object', 'pen_stroke', 'free_arrow', 'structure_destroyed'];
 const SAFE_UID_RE = /^[A-Za-z0-9_-]{1,80}$/;
+const SAFE_OBJ_UID_RE = /^(champ|minion|ward|ping|object|obj|monster|stroke|arrow|imp)_[A-Za-z0-9_-]{1,70}$/;
 const SAFE_CHAMP_ID_RE = /^[A-Za-z0-9]{1,40}$/;
 const SAFE_COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
+const SAFE_VERSION_RE = /^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$/;
 const SAFE_LOCAL_IMG_RE = /^images\/[A-Za-z0-9_.' -]{1,80}\.(png|jpg|jpeg|webp|gif)$/;
+const SAFE_DATA_IMAGE_RE = /^data:image\/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$/;
+const OBJ_UID_TYPE_PREFIX = {
+    champion: 'champ',
+    minion: 'minion',
+    ward: 'ward',
+    ping: 'ping',
+    object: 'object',
+    pen_stroke: 'stroke',
+    free_arrow: 'arrow'
+};
+
+function safeJsonParse(jsonStr) {
+    return JSON.parse(jsonStr, (key, value) => {
+        if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+            return undefined;
+        }
+        return value;
+    });
+}
+
+function sanitizeDataImageUrl(url) {
+    if (typeof url !== 'string') return '';
+    const trimmed = url.trim();
+    const match = trimmed.match(/^(data:image\/(?:png|jpeg|jpg|webp|gif);base64,)([\s\S]+)$/i);
+    if (!match) return '';
+    const cleaned = match[1].toLowerCase() + match[2].replace(/\s+/g, '');
+    return SAFE_DATA_IMAGE_RE.test(cleaned) ? cleaned : '';
+}
+
+function getPlacedObjectEl(uid) {
+    if (typeof uid !== 'string' || !SAFE_OBJ_UID_RE.test(uid)) return null;
+    const el = document.getElementById(uid);
+    if (!el || el.parentElement !== mapEl || !el.classList.contains('placed-object')) return null;
+    return el;
+}
 
 function sanitizeImportText(value, maxLen) {
     return String(value == null ? '' : value).replace(/[\u0000-\u001f\u007f]/g, '').slice(0, maxLen || 60);
@@ -4718,7 +4919,8 @@ function sanitizeImportSrc(src) {
     if (typeof src !== 'string') return '';
     const s = src.trim();
     if (SAFE_LOCAL_IMG_RE.test(s)) return s;
-    if (/^data:image\/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(s)) return s;
+    const safeData = sanitizeDataImageUrl(s);
+    if (safeData) return safeData;
     try {
         const u = new URL(s);
         if (u.protocol === 'https:' && SAFE_IMPORT_IMG_HOSTS.includes(u.hostname)) return u.href;
@@ -4732,15 +4934,48 @@ function sanitizeImportNum(v, min, max, fallback) {
     return Math.max(min, Math.min(max, n));
 }
 
+function sanitizeImportCustomCamps(camps) {
+    if (!Array.isArray(camps)) return null;
+    return camps.slice(0, 100)
+        .filter(c => c && typeof c === 'object')
+        .map(c => ({
+            type: 'object',
+            src: sanitizeImportSrc(c.src),
+            minionType: undefined,
+            dimmed: Boolean(c.dimmed),
+            x: sanitizeImportNum(c.x, -5000, 5000, 0),
+            y: sanitizeImportNum(c.y, -5000, 5000, 0)
+        }))
+        .filter(c => c.src);
+}
+
+function sanitizeImportTacticsList(tactics) {
+    return (Array.isArray(tactics) ? tactics : []).slice(0, 500)
+        .filter(t => t && typeof t === 'object')
+        .map((t, idx) => {
+            const board = sanitizeImportBoard(t);
+            if (!board) return null;
+            const id = (typeof t.id === 'string' && SAFE_UID_RE.test(t.id))
+                ? t.id
+                : `tactic_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 4)}`;
+            return Object.assign({}, board, {
+                id: id,
+                name: sanitizeImportText(t.name, 60) || `불러온 전술 ${idx + 1}`,
+                updatedAt: Number.isFinite(Number(t.updatedAt)) ? Number(t.updatedAt) : Date.now()
+            });
+        }).filter(Boolean);
+}
+
 function sanitizeImportTimeline(timeline) {
     const steps = Array.isArray(timeline) ? timeline.slice(0, 200) : [[]];
     const uidMap = new Map();
-    const mapUid = (rawUid) => {
+    const mapUid = (rawUid, typePrefix) => {
         const key = String(rawUid);
         if (uidMap.has(key)) return uidMap.get(key);
-        const safe = SAFE_UID_RE.test(key)
+        const safePrefix = OBJ_UID_TYPE_PREFIX[typePrefix] || 'imp';
+        const safe = SAFE_OBJ_UID_RE.test(key)
             ? key
-            : 'imp_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 6) + '_' + uidMap.size;
+            : `${safePrefix}_imp_${Date.now().toString(36)}_${Math.random().toString(36).substr(2, 6)}_${uidMap.size}`;
         uidMap.set(key, safe);
         return safe;
     };
@@ -4758,7 +4993,7 @@ function sanitizeImportTimeline(timeline) {
                 return;
             }
 
-            const clean = { type: o.type, uid: mapUid(o.uid) };
+            const clean = { type: o.type, uid: mapUid(o.uid, o.type) };
             clean.x = sanitizeImportNum(o.x, -5000, 5000, 0);
             clean.y = sanitizeImportNum(o.y, -5000, 5000, 0);
 
@@ -4801,7 +5036,9 @@ function sanitizeImportPresetList(list) {
     return (Array.isArray(list) ? list : []).slice(0, 200)
         .filter(p => Array.isArray(p) ? false : (p && typeof p === 'object'))
         .map((p, idx) => ({
-            id: sanitizeImportText(p.id, 60) || `user_preset_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 4)}`,
+            id: (typeof p.id === 'string' && SAFE_UID_RE.test(p.id))
+                ? p.id
+                : `user_preset_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 4)}`,
             name: sanitizeImportText(p.name, 60) || `불러온 프리셋 ${idx + 1}`,
             blue: (Array.isArray(p.blue) ? p.blue : []).filter(k => typeof k === 'string' && SAFE_CHAMP_ID_RE.test(k)).slice(0, 5),
             red: (Array.isArray(p.red) ? p.red : []).filter(k => typeof k === 'string' && SAFE_CHAMP_ID_RE.test(k)).slice(0, 5)
@@ -4827,20 +5064,7 @@ function sanitizeImportBoard(snap) {
 
 function sanitizeImportedPackage(pkg) {
     if (!pkg || typeof pkg !== 'object') throw new Error('지원하지 않는 데이터 구조입니다.');
-    const tactics = (Array.isArray(pkg.tactics) ? pkg.tactics : []).slice(0, 500)
-        .filter(t => t && typeof t === 'object')
-        .map((t, idx) => {
-            const board = sanitizeImportBoard(t);
-            if (!board) return null;
-            const id = (typeof t.id === 'string' && SAFE_UID_RE.test(t.id))
-                ? t.id
-                : `tactic_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 4)}`;
-            return Object.assign({}, board, {
-                id: id,
-                name: sanitizeImportText(t.name, 60) || `불러온 전술 ${idx + 1}`,
-                updatedAt: Number.isFinite(Number(t.updatedAt)) ? Number(t.updatedAt) : Date.now()
-            });
-        }).filter(Boolean);
+    const tactics = sanitizeImportTacticsList(pkg.tactics);
 
     let iconSizes = null;
     if (pkg.iconSizes && typeof pkg.iconSizes === 'object') {
@@ -4852,19 +5076,7 @@ function sanitizeImportedPackage(pkg) {
         };
     }
 
-    let customCamps = null;
-    if (Array.isArray(pkg.customCamps)) {
-        customCamps = pkg.customCamps.slice(0, 100)
-            .filter(c => c && typeof c === 'object')
-            .map(c => ({
-                type: 'object',
-                src: sanitizeImportSrc(c.src),
-                dimmed: Boolean(c.dimmed),
-                x: sanitizeImportNum(c.x, -5000, 5000, 0),
-                y: sanitizeImportNum(c.y, -5000, 5000, 0)
-            }))
-            .filter(c => c.src);
-    }
+    const customCamps = Array.isArray(pkg.customCamps) ? sanitizeImportCustomCamps(pkg.customCamps) : null;
 
     return {
         scope: pkg.scope === 'all' ? 'all' : 'tactics',
@@ -4986,7 +5198,7 @@ function getBackupSlotsFromStorage() {
     const raw = localStorage.getItem(BACKUP_SLOTS_STORAGE_KEY);
     if (!raw) return [];
     try {
-        const parsed = JSON.parse(raw);
+        const parsed = safeJsonParse(raw);
         return Array.isArray(parsed) ? parsed.slice(0, MAX_BACKUP_SLOTS) : [];
     } catch (e) {
         return [];
@@ -5154,10 +5366,10 @@ function renderBackupSlotsUI() {
 }
 
 function applyIconSizeConfig(iconSizes) {
-    if (!iconSizes) return;
-    if (typeof iconSizes.champ === 'number') baseChampSize = Math.max(16, Math.min(72, iconSizes.champ));
-    if (typeof iconSizes.minion === 'number') baseMinionSize = Math.max(20, Math.min(120, iconSizes.minion));
-    if (typeof iconSizes.object === 'number') baseObjectSize = Math.max(16, Math.min(80, iconSizes.object));
+    if (!iconSizes || typeof iconSizes !== 'object') return;
+    if (Number.isFinite(Number(iconSizes.champ))) baseChampSize = sanitizeImportNum(iconSizes.champ, 16, 72, 40);
+    if (Number.isFinite(Number(iconSizes.minion))) baseMinionSize = sanitizeImportNum(iconSizes.minion, 20, 120, 60);
+    if (Number.isFinite(Number(iconSizes.object))) baseObjectSize = sanitizeImportNum(iconSizes.object, 16, 80, 32);
     if (typeof iconSizes.auto === 'boolean') isAutoSizeEnabled = iconSizes.auto;
 
     const sizeSlider = document.getElementById('size-slider');
@@ -5195,7 +5407,7 @@ function restoreSelectedBackupSlot() {
     let restoredPresets = target.presets;
     let restoredBoard = target.board;
     let restoredIconSizes = target.iconSizes;
-    let restoredCustomCampsRaw = target.customCampsRaw;
+    let restoredCustomCamps = null;
 
     if (target.v === 1) {
         restoredTactics = Array.isArray(target.tactics)
@@ -5229,38 +5441,43 @@ function restoreSelectedBackupSlot() {
 
         if (Array.isArray(target.iconSizes) && target.iconSizes.length >= 3) {
             restoredIconSizes = {
-                champ: Number(target.iconSizes[0]) || 40,
-                minion: Number(target.iconSizes[1]) || 60,
-                object: Number(target.iconSizes[2]) || 32,
+                champ: sanitizeImportNum(target.iconSizes[0], 16, 72, 40),
+                minion: sanitizeImportNum(target.iconSizes[1], 20, 120, 60),
+                object: sanitizeImportNum(target.iconSizes[2], 16, 80, 32),
                 auto: target.iconSizes[3] !== 0
             };
         }
 
         if (Array.isArray(target.cp)) {
-            restoredCustomCampsRaw = JSON.stringify(target.cp.map(tup => ({
+            restoredCustomCamps = sanitizeImportCustomCamps(target.cp.map(tup => ({
                 type: 'object',
-                src: decodeAssetSrc(tup[0], dict),
-                dimmed: Boolean(tup[3]),
-                x: Number(tup[1]) || 0,
-                y: Number(tup[2]) || 0
+                src: Array.isArray(tup) ? decodeAssetSrc(tup[0], dict) : '',
+                dimmed: Array.isArray(tup) ? Boolean(tup[3]) : false,
+                x: Array.isArray(tup) ? tup[1] : 0,
+                y: Array.isArray(tup) ? tup[2] : 0
             })));
-        } else {
-            restoredCustomCampsRaw = null;
         }
+    } else if (typeof target.customCampsRaw === 'string') {
+        try {
+            restoredCustomCamps = sanitizeImportCustomCamps(safeJsonParse(target.customCampsRaw));
+        } catch (e) {}
     }
 
     if (Array.isArray(restoredTactics)) {
+        restoredTactics = sanitizeImportTacticsList(restoredTactics);
         saveTacticsToStorage(restoredTactics);
     }
     if (Array.isArray(restoredPresets)) {
+        restoredPresets = sanitizeImportPresetList(restoredPresets);
         savePresetsToStorage(restoredPresets);
     }
-    if (restoredCustomCampsRaw) {
-        localStorage.setItem('lol_strategy_jungle_camps', restoredCustomCampsRaw);
+    if (Array.isArray(restoredCustomCamps) && restoredCustomCamps.length > 0) {
+        localStorage.setItem('lol_strategy_jungle_camps', JSON.stringify(restoredCustomCamps));
     } else {
         localStorage.removeItem('lol_strategy_jungle_camps');
     }
 
+    restoredBoard = restoredBoard ? sanitizeImportBoard(restoredBoard) : null;
     applyIconSizeConfig(restoredIconSizes);
     if (restoredBoard) {
         applyBoardSnapshot(restoredBoard, true);

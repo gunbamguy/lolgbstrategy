@@ -27,6 +27,146 @@ const svgLayer = document.getElementById('svg-layer');
 const structureLayer = document.getElementById('structure-layer');
 const obsMousePointer = document.getElementById('obs-mouse-pointer');
 
+// 🛡️ OBS 수신 데이터 정화(Sanitize): BroadcastChannel/WebSocket 인젝션 및 DOM 하이재킹 방어
+const MAX_OBS_MSG_CHARS = 5 * 1024 * 1024;
+const SAFE_OBS_IMG_HOSTS = ['ddragon.leagueoflegends.com', 'raw.communitydragon.org'];
+const SAFE_OBS_TYPES = ['champion', 'minion', 'ward', 'ping', 'object', 'pen_stroke', 'free_arrow', 'structure_destroyed'];
+const SAFE_OBJ_UID_RE = /^(champ|minion|ward|ping|object|obj|monster|stroke|arrow|imp)_[A-Za-z0-9_-]{1,70}$/;
+const SAFE_UID_RE = /^[A-Za-z0-9_-]{1,80}$/;
+const SAFE_CHAMP_ID_RE = /^[A-Za-z0-9]{1,40}$/;
+const SAFE_COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
+const SAFE_VERSION_RE = /^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$/;
+const SAFE_LOCAL_IMG_RE = /^images\/[A-Za-z0-9_.' -]{1,80}\.(png|jpg|jpeg|webp|gif)$/;
+const SAFE_DATA_IMAGE_RE = /^data:image\/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$/;
+const OBS_UID_TYPE_PREFIX = {
+    champion: 'champ',
+    minion: 'minion',
+    ward: 'ward',
+    ping: 'ping',
+    object: 'object',
+    pen_stroke: 'stroke',
+    free_arrow: 'arrow'
+};
+
+function safeObsJsonParse(jsonStr) {
+    return JSON.parse(jsonStr, (key, value) => {
+        if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+            return undefined;
+        }
+        return value;
+    });
+}
+
+function sanitizeObsDataUrl(url) {
+    if (typeof url !== 'string') return '';
+    const trimmed = url.trim();
+    const match = trimmed.match(/^(data:image\/(?:png|jpeg|jpg|webp|gif);base64,)([\s\S]+)$/i);
+    if (!match) return '';
+    const cleaned = match[1].toLowerCase() + match[2].replace(/\s+/g, '');
+    return SAFE_DATA_IMAGE_RE.test(cleaned) ? cleaned : '';
+}
+
+function sanitizeObsSrc(src) {
+    if (typeof src !== 'string') return '';
+    const s = src.trim();
+    if (SAFE_LOCAL_IMG_RE.test(s)) return s;
+    const safeData = sanitizeObsDataUrl(s);
+    if (safeData) return safeData;
+    try {
+        const u = new URL(s);
+        if (u.protocol === 'https:' && SAFE_OBS_IMG_HOSTS.includes(u.hostname)) return u.href;
+    } catch (e) {}
+    return '';
+}
+
+function sanitizeObsNum(v, min, max, fallback) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(min, Math.min(max, n));
+}
+
+function sanitizeObsVersion(ver) {
+    return (typeof ver === 'string' && SAFE_VERSION_RE.test(ver)) ? ver : '14.5.1';
+}
+
+function sanitizeObsChampList(arr) {
+    return (Array.isArray(arr) ? arr : [])
+        .filter(k => typeof k === 'string' && SAFE_CHAMP_ID_RE.test(k))
+        .slice(0, 5);
+}
+
+function getObsPlacedObjectEl(uid) {
+    if (typeof uid !== 'string' || !SAFE_OBJ_UID_RE.test(uid)) return null;
+    const el = document.getElementById(uid);
+    if (!el || el.parentElement !== mapEl || !el.classList.contains('placed-object')) return null;
+    return el;
+}
+
+function sanitizeObsTimeline(timeline) {
+    const steps = Array.isArray(timeline) ? timeline.slice(0, 200) : [[]];
+    const uidMap = new Map();
+    const mapUid = (rawUid, typePrefix) => {
+        const key = String(rawUid);
+        if (uidMap.has(key)) return uidMap.get(key);
+        const safePrefix = OBS_UID_TYPE_PREFIX[typePrefix] || 'imp';
+        const safe = SAFE_OBJ_UID_RE.test(key)
+            ? key
+            : `${safePrefix}_imp_${Date.now().toString(36)}_${Math.random().toString(36).substr(2, 6)}_${uidMap.size}`;
+        uidMap.set(key, safe);
+        return safe;
+    };
+
+    const result = steps.map(step => {
+        if (!Array.isArray(step)) return [];
+        const out = [];
+        step.slice(0, 2000).forEach(o => {
+            if (!o || typeof o !== 'object' || !SAFE_OBS_TYPES.includes(o.type)) return;
+
+            if (o.type === 'structure_destroyed') {
+                if (typeof o.uid === 'string' && /^struct_\d{1,3}$/.test(o.uid)) {
+                    out.push({ type: 'structure_destroyed', uid: o.uid });
+                }
+                return;
+            }
+
+            const clean = { type: o.type, uid: mapUid(o.uid, o.type) };
+            clean.x = sanitizeObsNum(o.x, -5000, 5000, 0);
+            clean.y = sanitizeObsNum(o.y, -5000, 5000, 0);
+
+            if (o.arrow && typeof o.arrow === 'object') {
+                clean.arrow = {
+                    hasArrow: Boolean(o.arrow.hasArrow),
+                    dx: sanitizeObsNum(o.arrow.dx, -5000, 5000, 0),
+                    dy: sanitizeObsNum(o.arrow.dy, -5000, 5000, 0)
+                };
+            }
+            if (o.dimmed) clean.dimmed = true;
+
+            if (o.type === 'champion') {
+                clean.champId = (typeof o.champId === 'string' && SAFE_CHAMP_ID_RE.test(o.champId)) ? o.champId : 'Poro';
+                if (o.team === 'blue' || o.team === 'red' || o.team === 'none') clean.team = o.team;
+            } else if (o.type === 'pen_stroke') {
+                clean.color = (typeof o.color === 'string' && SAFE_COLOR_RE.test(o.color)) ? o.color : '#ff5252';
+                clean.width = sanitizeObsNum(o.width, 1, 40, 4);
+                clean.points = (Array.isArray(o.points) ? o.points.slice(0, 5000) : [])
+                    .filter(p => p && typeof p === 'object')
+                    .map(p => ({ x: sanitizeObsNum(p.x, -5000, 5000, 0), y: sanitizeObsNum(p.y, -5000, 5000, 0) }));
+                delete clean.arrow;
+            } else if (o.type === 'free_arrow') {
+                if (!clean.arrow) clean.arrow = { hasArrow: true, dx: 0, dy: 0 };
+            } else {
+                clean.src = sanitizeObsSrc(o.src);
+                if (o.type === 'minion') {
+                    clean.minionType = o.minionType === 'minion-red' ? 'minion-red' : 'minion-blue';
+                }
+            }
+            out.push(clean);
+        });
+        return out;
+    });
+    return result.length > 0 ? result : [[]];
+}
+
 // --- 1. 통신 리스너 설정 ---
 
 // BroadcastChannel 리스너
@@ -62,7 +202,8 @@ function connectWebSocket() {
 
     ws.onmessage = (e) => {
         try {
-            const data = JSON.parse(e.data);
+            if (typeof e.data !== 'string' || e.data.length > MAX_OBS_MSG_CHARS) return;
+            const data = safeObsJsonParse(e.data);
             handleMessage(data);
         } catch (err) {
             console.error("웹소켓 메시지 파싱 에러:", err);
@@ -87,51 +228,61 @@ connectWebSocket();
 
 // 메시지 통합 핸들러
 function handleMessage(data) {
-    if (!data) return;
+    if (!data || typeof data !== 'object') return;
 
     if (data.type === 'sync-scene') {
-        timelineData = data.timelineData || [ [] ];
-        currentStepIndex = data.currentStepIndex || 0;
-        myTeamSide = data.myTeamSide || 'blue';
-        if (Array.isArray(data.bluePreset)) bluePreset = data.bluePreset;
-        if (Array.isArray(data.redPreset)) redPreset = data.redPreset;
-        zoomLevel = data.zoomLevel || 1.0;
-        champIconSize = data.champIconSize || 40;
-        minionIconSize = data.minionIconSize || 60;
-        objectIconSize = data.objectIconSize || 32;
+        timelineData = sanitizeObsTimeline(data.timelineData);
+        currentStepIndex = Math.max(0, Math.min(Math.floor(sanitizeObsNum(data.currentStepIndex, 0, 1000, 0)), timelineData.length - 1));
+        myTeamSide = data.myTeamSide === 'red' ? 'red' : 'blue';
+        if (Array.isArray(data.bluePreset)) bluePreset = sanitizeObsChampList(data.bluePreset);
+        if (Array.isArray(data.redPreset)) redPreset = sanitizeObsChampList(data.redPreset);
+        zoomLevel = sanitizeObsNum(data.zoomLevel, 0.3, 4.0, 1.0);
+        champIconSize = sanitizeObsNum(data.champIconSize, 8, 200, 40);
+        minionIconSize = sanitizeObsNum(data.minionIconSize, 8, 240, 60);
+        objectIconSize = sanitizeObsNum(data.objectIconSize, 8, 200, 32);
         if (data.currentVersion) {
-            currentVersion = data.currentVersion;
+            currentVersion = sanitizeObsVersion(data.currentVersion);
         }
-        if (data.viewport) {
-            lastViewport = data.viewport;
+        if (data.viewport && typeof data.viewport === 'object') {
+            lastViewport = {
+                mapCenterX: sanitizeObsNum(data.viewport.mapCenterX, -5000, 5000, MAP_BASE_WIDTH / 2),
+                mapCenterY: sanitizeObsNum(data.viewport.mapCenterY, -5000, 5000, MAP_BASE_HEIGHT / 2)
+            };
         }
         if (data.currentMode) {
-            currentMode = data.currentMode;
+            currentMode = data.currentMode === 'screenshot' ? 'screenshot' : 'map';
         }
         if (data.selectedScreenshotId !== undefined) {
-            selectedScreenshotId = data.selectedScreenshotId;
+            selectedScreenshotId = (typeof data.selectedScreenshotId === 'string' && SAFE_UID_RE.test(data.selectedScreenshotId))
+                ? data.selectedScreenshotId
+                : null;
         }
         if (data.activeScreenshotDataUrl !== undefined) {
-            activeScreenshotDataUrl = data.activeScreenshotDataUrl;
+            activeScreenshotDataUrl = data.activeScreenshotDataUrl ? (sanitizeObsDataUrl(data.activeScreenshotDataUrl) || null) : null;
         }
         if (data.showGhostChampions !== undefined) {
-            showGhostChampions = data.showGhostChampions;
+            showGhostChampions = Boolean(data.showGhostChampions);
         }
         
         applyZoom();
         applyAppMode();
         renderScene();
     } else if (data.type === 'sync-viewport') {
-        zoomLevel = data.zoomLevel || 1.0;
-        if (data.viewport) {
-            lastViewport = data.viewport;
+        zoomLevel = sanitizeObsNum(data.zoomLevel, 0.3, 4.0, 1.0);
+        if (data.viewport && typeof data.viewport === 'object') {
+            lastViewport = {
+                mapCenterX: sanitizeObsNum(data.viewport.mapCenterX, -5000, 5000, MAP_BASE_WIDTH / 2),
+                mapCenterY: sanitizeObsNum(data.viewport.mapCenterY, -5000, 5000, MAP_BASE_HEIGHT / 2)
+            };
         }
         applyZoom();
     } else if (data.type === 'mouse-move') {
-        if (obsMousePointer) {
+        const safeX = sanitizeObsNum(data.x, -5000, 5000, null);
+        const safeY = sanitizeObsNum(data.y, -5000, 5000, null);
+        if (obsMousePointer && safeX !== null && safeY !== null) {
             // 마우스 커서 위치 업데이트
-            obsMousePointer.style.left = data.x + "px";
-            obsMousePointer.style.top = data.y + "px";
+            obsMousePointer.style.left = safeX + "px";
+            obsMousePointer.style.top = safeY + "px";
             obsMousePointer.classList.add('active');
         }
     } else if (data.type === 'mouse-leave') {
@@ -269,9 +420,10 @@ function renderGhosts() {
         const teamClass = effectiveTeam ? `team-${effectiveTeam}` : '';
         ghostEl.className = `placed-object placed-champion ghost-champion ${teamClass}`.trim();
         ghostEl.setAttribute('data-ghost-uid', obj.uid);
-        if (obj.champId && obj.champId !== "Poro") {
-            const imgUrl = obj.champId === "Locke" ? "images/Locke.png" : `https://ddragon.leagueoflegends.com/cdn/${currentVersion}/img/champion/${obj.champId}.png`;
-            ghostEl.style.backgroundImage = `url(${imgUrl})`;
+        if (obj.champId && obj.champId !== "Poro" && SAFE_CHAMP_ID_RE.test(obj.champId)) {
+            const safeVer = sanitizeObsVersion(currentVersion);
+            const imgUrl = obj.champId === "Locke" ? "images/Locke.png" : `https://ddragon.leagueoflegends.com/cdn/${safeVer}/img/champion/${obj.champId}.png`;
+            ghostEl.style.backgroundImage = `url("${imgUrl}")`;
             ghostEl.style.backgroundSize = 'cover';
         } else {
             ghostEl.style.backgroundColor = '#ccc';
@@ -285,14 +437,17 @@ function renderGhosts() {
 }
 
 function renderDOM(obj, className) {
-    let el = document.getElementById(obj.uid);
+    if (!obj || typeof obj.uid !== 'string' || !SAFE_OBJ_UID_RE.test(obj.uid)) return;
+    let el = getObsPlacedObjectEl(obj.uid);
+    const safeVer = sanitizeObsVersion(currentVersion);
+    const safeChampId = (typeof obj.champId === 'string' && SAFE_CHAMP_ID_RE.test(obj.champId)) ? obj.champId : 'Poro';
     const desiredSrc = obj.type === 'champion'
-        ? (obj.champId && obj.champId !== "Poro"
-            ? (obj.champId === "Locke"
+        ? (safeChampId !== "Poro"
+            ? (safeChampId === "Locke"
                 ? "images/Locke.png"
-                : `https://ddragon.leagueoflegends.com/cdn/${currentVersion || '14.5.1'}/img/champion/${obj.champId}.png`)
+                : `https://ddragon.leagueoflegends.com/cdn/${safeVer}/img/champion/${safeChampId}.png`)
             : "__poro__")
-        : (obj.src || "");
+        : sanitizeObsSrc(obj.src || "");
 
     if (!el) {
         el = document.createElement(obj.type === 'champion' ? 'div' : 'img');
@@ -306,7 +461,7 @@ function renderDOM(obj, className) {
         el.dataset.renderSrc = desiredSrc;
         if (obj.type === 'champion') {
             if (desiredSrc !== "__poro__") {
-                el.style.backgroundImage = `url(${desiredSrc})`;
+                el.style.backgroundImage = `url("${desiredSrc}")`;
                 el.style.backgroundSize = 'cover';
                 el.style.backgroundColor = '#000';
             } else {
@@ -372,6 +527,7 @@ function renderArrows() {
 
     // 2) 화살표 그리기
     arrowObjs.forEach(obj => {
+        if (!obj || typeof obj.uid !== 'string' || !SAFE_OBJ_UID_RE.test(obj.uid)) return;
         let dx, dy, startX, startY;
         if (obj.type === 'free_arrow') {
             dx = obj.arrow.dx;
@@ -444,6 +600,7 @@ function renderStrokes() {
     });
     
     strokeObjs.forEach(obj => {
+        if (!obj || typeof obj.uid !== 'string' || !SAFE_OBJ_UID_RE.test(obj.uid)) return;
         let path = svgLayer.querySelector(`path[data-uid="${obj.uid}"]`);
         if (!path) {
             path = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -508,8 +665,9 @@ function applyAppMode() {
         }
     } else {
         if (structureLayer) structureLayer.style.display = 'none';
-        if (activeScreenshotDataUrl && mapEl) {
-            mapEl.style.backgroundImage = `url(${activeScreenshotDataUrl})`;
+        const safeBgUrl = activeScreenshotDataUrl ? sanitizeObsDataUrl(activeScreenshotDataUrl) : '';
+        if (safeBgUrl && mapEl) {
+            mapEl.style.backgroundImage = `url("${safeBgUrl}")`;
             mapEl.style.backgroundColor = '#0f0f0f';
         } else {
             if (mapEl) {
