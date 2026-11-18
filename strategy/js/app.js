@@ -135,7 +135,7 @@ let dragGrabOffsetX = 0;
 let dragGrabOffsetY = 0;
 
 // Undo/Redo: 초기 빈 보드 상태를 즉시 보존하여 첫 동작도 항상 Undo 가능하도록 보장
-let historyStack = [{ data: [ [] ], stepIndex: 0 }];
+let historyStack = [{ data: [ [] ], stepIndex: 0, prevStepIndex: 0 }];
 let historyPointer = 0;
 
 const mapEl = document.getElementById('rift-map');
@@ -863,6 +863,16 @@ function bindZoomAndPanEvents() {
             clearSelection();
         }
     });
+
+    // 창 포커스 이탈(Alt+Tab 등) 시 진행 중인 드래그/그리기/패닝 안전 종료 및 확정
+    window.addEventListener('blur', () => {
+        isPanningReady = false;
+        if (isPanning) {
+            isPanning = false;
+            mapArea.classList.remove('panning');
+        }
+        finalizeActiveInteraction();
+    });
 }
 
 // --- Core Logic ---
@@ -909,6 +919,28 @@ function cancelActiveInteraction() {
     if (typeof erasedSomething !== 'undefined') erasedSomething = false;
 }
 
+function finalizeActiveInteraction() {
+    const didDragChange = Boolean(draggedObj && hasDraggedMoved && (
+        dragType === 'arrow-end'
+            ? (draggedObj.arrow && (draggedObj.arrow.dx !== dragOrigDx || draggedObj.arrow.dy !== dragOrigDy))
+            : (draggedObj.x !== dragOrigX || draggedObj.y !== dragOrigY)
+    ));
+    const didEraseChange = Boolean(typeof erasedSomething !== 'undefined' && erasedSomething);
+    const hadTemp = Boolean(
+        (typeof currentDrawingArrow !== 'undefined' && currentDrawingArrow) ||
+        (typeof currentDrawingStroke !== 'undefined' && currentDrawingStroke)
+    );
+
+    cancelActiveInteraction();
+
+    if (didDragChange || didEraseChange) {
+        recordHistory();
+        renderScene();
+    } else if (hadTemp) {
+        renderScene();
+    }
+}
+
 function updateUndoRedoButtonsUI() {
     const canUndo = historyPointer > 0;
     const canRedo = historyPointer >= 0 && historyPointer < historyStack.length - 1;
@@ -922,7 +954,7 @@ function updateUndoRedoButtonsUI() {
     });
 }
 
-function recordHistory() {
+function recordHistory(prevStepIdx = currentStepIndex) {
     if (!timelineData[currentStepIndex]) return;
     if (historyPointer < historyStack.length - 1) {
         historyStack = historyStack.slice(0, historyPointer + 1);
@@ -939,18 +971,19 @@ function recordHistory() {
     const clonedData = JSON.parse(JSON.stringify(cleanData));
     const serializedData = JSON.stringify(clonedData);
 
-    // 직전 스냅샷과 데이터가 완전히 동일하면 중복 기록 생략
+    // 직전 스냅샷과 데이터가 완전히 동일하면 중복 기록 생략 (기존 스냅샷의 stepIndex 보존)
     if (historyPointer >= 0 && historyStack[historyPointer]) {
         if (JSON.stringify(historyStack[historyPointer].data) === serializedData) {
-            historyStack[historyPointer].stepIndex = currentStepIndex;
             updateUndoRedoButtonsUI();
             return;
         }
     }
 
+    const safePrevStepIdx = typeof prevStepIdx === 'number' ? prevStepIdx : currentStepIndex;
     const snapshot = {
         data: clonedData,
-        stepIndex: currentStepIndex
+        stepIndex: currentStepIndex,
+        prevStepIndex: safePrevStepIdx
     };
     historyStack.push(snapshot);
     historyPointer++;
@@ -962,6 +995,17 @@ function recordHistory() {
 }
 
 function undo() {
+    const hasUncommittedMutation = Boolean(
+        hasDraggedMoved ||
+        erasedSomething ||
+        (typeof currentDrawingArrow !== 'undefined' && currentDrawingArrow) ||
+        (typeof currentDrawingStroke !== 'undefined' && currentDrawingStroke)
+    );
+    if (hasUncommittedMutation && historyPointer >= 0 && historyStack[historyPointer]) {
+        // 드래그·지우개·그리기 진행 중 Ctrl+Z 시 미확정 변형만 원복하고 히스토리 포인터는 유지
+        restoreState(historyStack[historyPointer], null, false, currentStepIndex);
+        return;
+    }
     if (historyPointer <= 0) {
         updateUndoRedoButtonsUI();
         showToast('더 이상 실행 취소할 내역이 없습니다.');
@@ -969,7 +1013,7 @@ function undo() {
     }
     const prevSnap = historyStack[historyPointer];
     historyPointer--;
-    restoreState(historyStack[historyPointer], prevSnap);
+    restoreState(historyStack[historyPointer], prevSnap, true);
 }
 
 function redo() {
@@ -980,7 +1024,7 @@ function redo() {
     }
     const prevSnap = historyStack[historyPointer];
     historyPointer++;
-    restoreState(historyStack[historyPointer], prevSnap);
+    restoreState(historyStack[historyPointer], prevSnap, false);
 }
 
 function triggerStepAnimation() {
@@ -991,22 +1035,33 @@ function triggerStepAnimation() {
     }, 350);
 }
 
-function restoreState(snapshot, prevSnapshot = null) {
+function restoreState(snapshot, prevSnapshot = null, isUndo = false, overrideStepIdx = null) {
     cancelActiveInteraction();
     if (window.animTimer) clearTimeout(window.animTimer);
     mapEl.classList.remove('animating');
 
     timelineData = JSON.parse(JSON.stringify(snapshot.data));
-    let nextStepIdx = Math.max(0, Math.min(snapshot.stepIndex || 0, timelineData.length - 1));
-    if (prevSnapshot && Array.isArray(prevSnapshot.data) && prevSnapshot.data.length === timelineData.length) {
-        const changedIdx = timelineData.findIndex((step, i) =>
-            JSON.stringify(step) !== JSON.stringify(prevSnapshot.data[i])
-        );
-        if (changedIdx !== -1) {
-            nextStepIdx = changedIdx;
+    let nextStepIdx;
+    if (typeof overrideStepIdx === 'number') {
+        nextStepIdx = overrideStepIdx;
+    } else {
+        nextStepIdx = (isUndo && prevSnapshot && typeof prevSnapshot.prevStepIndex === 'number')
+            ? prevSnapshot.prevStepIndex
+            : (snapshot.stepIndex || 0);
+
+        if (prevSnapshot && Array.isArray(prevSnapshot.data) && prevSnapshot.data.length === timelineData.length) {
+            const changedIndices = [];
+            for (let i = 0; i < timelineData.length; i++) {
+                if (JSON.stringify(timelineData[i]) !== JSON.stringify(prevSnapshot.data[i])) {
+                    changedIndices.push(i);
+                }
+            }
+            if (changedIndices.length === 1) {
+                nextStepIdx = changedIndices[0];
+            }
         }
     }
-    currentStepIndex = nextStepIdx;
+    currentStepIndex = Math.max(0, Math.min(nextStepIdx, timelineData.length - 1));
 
     if (selectedObjUid && !(timelineData[currentStepIndex] || []).some(o => o.uid === selectedObjUid)) {
         selectedObjUid = null;
@@ -1435,6 +1490,8 @@ function createCurrentBoardSnapshot() {
 }
 
 function applyBoardSnapshot(tactic, shouldRecordHistory = true) {
+    cancelActiveInteraction();
+    const prevIdx = currentStepIndex;
     const safeTactic = sanitizeImportBoard(tactic) || createEmptyBoardSnapshot();
     triggerStepAnimation();
     mapEl.querySelectorAll('.placed-object, .arrow-control').forEach(el => el.remove());
@@ -1457,11 +1514,12 @@ function applyBoardSnapshot(tactic, shouldRecordHistory = true) {
 
     renderScene();
     if (shouldRecordHistory) {
-        recordHistory();
+        recordHistory(prevIdx);
     }
 }
 
 function onTacticSelectChange(tacticId) {
+    blurActiveTextInput();
     if (!tacticId) {
         currentTacticId = null;
         renderTacticsUI();
@@ -1926,14 +1984,16 @@ function renderStrokes() {
             path.addEventListener('click', (e) => {
                 e.stopPropagation();
                 clearSelection();
-                selectedObjUid = obj.uid;
+                const targetObj = path._dataObj || obj;
+                selectedObjUid = targetObj.uid;
                 renderScene();
             });
             
             path.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                showContextMenu(e.clientX, e.clientY, obj.uid);
+                const targetObj = path._dataObj || obj;
+                showContextMenu(e.clientX, e.clientY, targetObj.uid);
             });
             
             svgLayer.appendChild(path);
@@ -1956,7 +2016,7 @@ function renderStrokes() {
 }
 
 function setDrawingTool(tool) {
-    cancelActiveInteraction();
+    finalizeActiveInteraction();
     activeTool = tool;
     document.querySelectorAll('.toolbar-group #tool-select, .toolbar-group #tool-pen, .toolbar-group #tool-arrow, .toolbar-group #tool-eraser').forEach(btn => {
         btn.classList.remove('active');
@@ -2089,7 +2149,7 @@ function renderTimeline() {
         btn.innerHTML = `<span class="step-number">${idx + 1}</span>`;
         btn.onclick = () => { 
             if (currentStepIndex !== idx) {
-                cancelActiveInteraction();
+                finalizeActiveInteraction();
                 triggerStepAnimation();
                 currentStepIndex = idx; 
                 renderScene(); 
@@ -2161,6 +2221,8 @@ function commitStepReplacement(nextObjs, toastMessage) {
 }
 
 function addNewStep() {
+    finalizeActiveInteraction();
+    const prevIdx = currentStepIndex;
     triggerStepAnimation();
     const keepLinesEl = document.getElementById('keep-lines-checkbox');
     const keepLines = keepLinesEl ? keepLinesEl.checked : false;
@@ -2172,7 +2234,7 @@ function addNewStep() {
         selectedObjUid = null;
     }
     renderScene();
-    recordHistory();
+    recordHistory(prevIdx);
 }
 
 function confirmStepOverwrite(targetDesc) {
@@ -2265,21 +2327,26 @@ function clearDrawingsInCurrentStep() {
 }
 
 function deleteCurrentStep() {
+    cancelActiveInteraction();
     if (timelineData.length <= 1) { 
         resetCurrentStep();
         return; 
     }
+    const prevIdx = currentStepIndex;
     triggerStepAnimation();
     timelineData.splice(currentStepIndex, 1);
     if (currentStepIndex >= timelineData.length) {
         currentStepIndex = timelineData.length - 1;
+    }
+    if (selectedObjUid && !(timelineData[currentStepIndex] || []).some(o => o.uid === selectedObjUid)) {
+        selectedObjUid = null;
     }
     // 기존 잔여 DOM 요소를 일괄 정리하여 렌더링 충돌 및 잔상 방지
     mapEl.querySelectorAll('.placed-object, .arrow-control').forEach(el => el.remove());
     svgLayer.querySelectorAll('line, path[data-uid]').forEach(l => l.remove());
     
     renderScene();
-    recordHistory();
+    recordHistory(prevIdx);
 }
 
 function deleteObject(uid) {
@@ -2315,6 +2382,7 @@ function clearSelection() {
 }
 
 function resetCurrentStep() {
+    cancelActiveInteraction();
     timelineData[currentStepIndex] = [];
     selectedObjUid = null;
     // 잔여 DOM 강제 정리로 초기화 오작동 원천 차단
@@ -2325,6 +2393,8 @@ function resetCurrentStep() {
 }
 
 function resetAllSteps() {
+    cancelActiveInteraction();
+    const prevIdx = currentStepIndex;
     timelineData = [ [] ];
     currentStepIndex = 0;
     selectedObjUid = null;
@@ -2332,13 +2402,13 @@ function resetAllSteps() {
     mapEl.querySelectorAll('.placed-object, .arrow-control').forEach(el => el.remove());
     svgLayer.querySelectorAll('line, path[data-uid]').forEach(l => l.remove());
     renderScene();
-    recordHistory();
+    recordHistory(prevIdx);
     showToast('🔄 전체 스텝과 보드 배치가 초기화되었습니다.');
 }
 
 function prevStep() {
     if (currentStepIndex > 0) {
-        cancelActiveInteraction();
+        finalizeActiveInteraction();
         triggerStepAnimation();
         currentStepIndex--;
         renderScene();
@@ -2347,7 +2417,7 @@ function prevStep() {
 
 function nextStep() {
     if (currentStepIndex < timelineData.length - 1) {
-        cancelActiveInteraction();
+        finalizeActiveInteraction();
         triggerStepAnimation();
         currentStepIndex++;
         renderScene();
@@ -2772,7 +2842,8 @@ function renderSingleArrow(obj) {
         line.addEventListener('click', (e) => {
             e.stopPropagation();
             clearSelection();
-            selectedObjUid = obj.uid;
+            const targetObj = line._dataObj || obj;
+            selectedObjUid = targetObj.uid;
             renderScene();
         });
 
@@ -2801,7 +2872,8 @@ function renderSingleArrow(obj) {
         end.addEventListener('click', (e) => {
             e.stopPropagation();
             clearSelection();
-            selectedObjUid = obj.uid;
+            const targetObj = end._dataObj || obj;
+            selectedObjUid = targetObj.uid;
             renderScene();
         });
         
@@ -2938,7 +3010,9 @@ document.addEventListener('keydown', (e) => {
     }
 
     // 텍스트 입력 필드(검색창, 닉네임 입력 등)에서만 단축키를 방지 (비어 있는 검색창의 Ctrl+Z/Ctrl+Y는 허용)
-    const isUndoRedoShortcut = (e.ctrlKey || e.metaKey) && (e.code === 'KeyZ' || e.code === 'KeyY');
+    const isKeyZ = e.code === 'KeyZ' || e.key === 'z' || e.key === 'Z';
+    const isKeyY = e.code === 'KeyY' || e.key === 'y' || e.key === 'Y';
+    const isUndoRedoShortcut = (e.ctrlKey || e.metaKey) && (isKeyZ || isKeyY);
     const isEmptySearchInput = e.target && e.target.id === 'search' && e.target.value === '';
     const isTyping = (e.target.tagName === 'TEXTAREA' || 
                      (e.target.tagName === 'INPUT' && (e.target.type === 'text' || e.target.type === 'search' || !e.target.type)))
@@ -2954,11 +3028,11 @@ document.addEventListener('keydown', (e) => {
     }
 
     // Undo / Redo
-    if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
+    if ((e.ctrlKey || e.metaKey) && isKeyZ) {
         e.preventDefault();
         if (e.shiftKey) redo(); else undo();
     }
-    if ((e.ctrlKey || e.metaKey) && e.code === 'KeyY') {
+    if ((e.ctrlKey || e.metaKey) && isKeyY) {
         e.preventDefault();
         redo();
     }
@@ -4360,12 +4434,15 @@ function keepTutorialDemoAndClose() {
         ? JSON.parse(JSON.stringify(tutorialSavedBoardState.historyStack))
         : null;
     const prevPointer = tutorialSavedBoardState ? tutorialSavedBoardState.historyPointer : -1;
+    const prevStepIdx = (tutorialSavedBoardState && tutorialSavedBoardState.snapshot && typeof tutorialSavedBoardState.snapshot.currentStepIndex === 'number')
+        ? tutorialSavedBoardState.snapshot.currentStepIndex
+        : currentStepIndex;
     endTutorial(false);
     if (prevHistory && prevHistory.length > 0) {
         historyStack = prevHistory;
         historyPointer = Math.max(0, Math.min(prevPointer, historyStack.length - 1));
     }
-    recordHistory();
+    recordHistory(prevStepIdx);
     showToast('🧪 튜토리얼 예제를 보드에 남겼습니다. 자유롭게 조작해 보세요!');
 }
 
